@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
@@ -25,10 +25,56 @@ const NEXT_STAGE_LABEL: Record<string, { min: number; label: string } | null> = 
   ]),
 );
 
+// How each freshly grown object announces itself.
+const GREW_VERB: Record<string, string> = {
+  LEAF: "A new leaf unfurled",
+  FLOWER: "A flower bloomed",
+  FRUIT: "Fruit ripened",
+  ROOT: "A root took hold",
+  PERSON: "A family sapling was planted",
+  PHOTO: "A memory was pinned",
+  MEMORY_MOMENT: "A moment was captured",
+  BRANCH: "A new branch reached out",
+  SEED: "A seed was planted",
+};
+
 export default function ForestExperience({ graph }: { graph: ForestGraph }) {
   const router = useRouter();
   const [selected, setSelected] = useState<ForestNodeDTO | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Nodes arrive ordered oldest→newest, so the last one is the freshest.
+  const newestNode = graph.nodes.length ? graph.nodes[graph.nodes.length - 1] : null;
+  const newestId = newestNode?.id ?? null;
+  // Seed with the current newest so the first render doesn't fly the camera.
+  const prevNewest = useRef<string | null>(newestId);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (newestId && prevNewest.current && newestId !== prevNewest.current && newestNode) {
+      // Something new grew — reveal it.
+      setSelected(newestNode);
+      setFocusId(newestId);
+      const verb = GREW_VERB[newestNode.kind] ?? "Your forest grew";
+      setToast(`${verb}: ${newestNode.title}`);
+
+      if (focusTimer.current) clearTimeout(focusTimer.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+      focusTimer.current = setTimeout(() => setFocusId(null), 4500);
+      toastTimer.current = setTimeout(() => setToast(null), 4000);
+    }
+    prevNewest.current = newestId;
+  }, [newestId, newestNode]);
+
+  useEffect(() => {
+    return () => {
+      if (focusTimer.current) clearTimeout(focusTimer.current);
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
 
   const handleGrew = useCallback(() => {
     router.refresh();
@@ -42,7 +88,12 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
   return (
     <div className="relative h-screen w-screen overflow-hidden">
       <div className="absolute inset-0">
-        <ForestCanvas graph={graph} selectedId={selected?.id ?? null} onSelect={setSelected} />
+        <ForestCanvas
+          graph={graph}
+          selectedId={selected?.id ?? null}
+          focusId={focusId}
+          onSelect={setSelected}
+        />
       </div>
 
       {/* Top-left: whose forest + growth stage. */}
@@ -72,6 +123,16 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
           {memoryCount} memories · {graph.counts.PERSON} family · {graph.counts.ROOT} roots
         </p>
       </div>
+
+      {/* Growth toast — announces what just grew. */}
+      {toast ? (
+        <div className="pointer-events-none absolute left-1/2 top-6 z-10 -translate-x-1/2 animate-[fadeIn_0.4s_ease-out] font-sans">
+          <div className="flex items-center gap-2 rounded-full border border-fruit/40 bg-black/80 px-5 py-2 text-sm text-parchment shadow-lg backdrop-blur">
+            <span className="text-fruit">✦</span>
+            <span>{toast}</span>
+          </div>
+        </div>
+      ) : null}
 
       {/* Sign out. */}
       <form action={signOutAction} className="absolute right-5 top-5 font-sans">
