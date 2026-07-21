@@ -18,6 +18,10 @@ const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
   ),
 });
 
+const ForestIntro = dynamic(() => import("./ForestIntro"), { ssr: false });
+
+const INTRO_SEEN_KEY = "everroot_intro_seen";
+
 const NEXT_STAGE_LABEL: Record<string, { min: number; label: string } | null> = Object.fromEntries(
   GROWTH_STAGES.map((s, i) => [
     s.stage,
@@ -44,6 +48,25 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
   const [panelOpen, setPanelOpen] = useState(true);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [showIntro, setShowIntro] = useState(false);
+
+  // Play the opening automatically the first time this browser sees the forest.
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(INTRO_SEEN_KEY)) setShowIntro(true);
+    } catch {
+      /* localStorage unavailable — just skip the intro. */
+    }
+  }, []);
+
+  const completeIntro = useCallback(() => {
+    setShowIntro(false);
+    try {
+      localStorage.setItem(INTRO_SEEN_KEY, "1");
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Nodes arrive ordered oldest→newest, so the last one is the freshest.
   const newestNode = graph.nodes.length ? graph.nodes[graph.nodes.length - 1] : null;
@@ -122,6 +145,12 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
         <p className="mt-2 text-xs text-parchment/40">
           {memoryCount} memories · {graph.counts.PERSON} family · {graph.counts.ROOT} roots
         </p>
+        <button
+          onClick={() => setShowIntro(true)}
+          className="pointer-events-auto mt-2 text-xs text-parchment/40 underline-offset-2 transition hover:text-parchment/80 hover:underline"
+        >
+          ▶ Replay opening
+        </button>
       </div>
 
       {/* Growth toast — announces what just grew. */}
@@ -161,6 +190,11 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
             Close
           </button>
         </div>
+      ) : null}
+
+      {/* Cinematic opening — plays over everything. */}
+      {showIntro ? (
+        <ForestIntro displayName={graph.profile.displayName} onComplete={completeIntro} />
       ) : null}
 
       {/* Growth panel. */}
