@@ -1,17 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Line, Html, Sky } from "@react-three/drei";
+import { OrbitControls, Html, Sky } from "@react-three/drei";
 import * as THREE from "three";
-import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
+import type { ForestGraph, ForestNodeDTO, GrowthStage } from "@/lib/forest/types";
 import { computeLayout, type PositionedNode, type Vec3, type Limb } from "@/lib/forest/layout";
 
 const COLORS: Record<string, string> = {
   SEED: "#c9a86a",
-  TRUNK: "#5b3a29",
-  BRANCH: "#6b4a35",
-  LEAF: "#4caf6d",
+  LEAF: "#7cc35a",
   FLOWER: "#e5738a",
   FRUIT: "#e8a33d",
   PHOTO: "#cfd8e3",
@@ -21,12 +19,22 @@ const COLORS: Record<string, string> = {
   MEMORY: "#9ad0b0",
 };
 
-// Nodes that are metadata, not drawn in the tree.
 const HIDDEN = new Set(["TIMELINE_EVENT", "RELATIONSHIP", "SUB_BRANCH"]);
+const SUN_POSITION: Vec3 = [-28, 30, -18];
 
-const SUN_POSITION: Vec3 = [-30, 18, -42];
+// Crown fullness by growth stage: radius + decorative leaf count.
+const CROWN: Record<GrowthStage, { r: number; count: number }> = {
+  SEED: { r: 0, count: 0 },
+  SPROUT: { r: 0.55, count: 160 },
+  SAPLING: { r: 1.15, count: 700 },
+  YOUNG_TREE: { r: 1.9, count: 2000 },
+  MATURE_TREE: { r: 2.6, count: 4200 },
+  ANCIENT_TREE: { r: 3.3, count: 6500 },
+};
+const STAGE_INDEX: Record<GrowthStage, number> = {
+  SEED: 0, SPROUT: 1, SAPLING: 2, YOUNG_TREE: 3, MATURE_TREE: 4, ANCIENT_TREE: 5,
+};
 
-// Deterministic 0..1 from an id, matching layout.ts, so a leaf's look is stable.
 function hash01(id: string, salt = 0): number {
   let h = 2166136261 ^ salt;
   for (let i = 0; i < id.length; i++) {
@@ -36,27 +44,126 @@ function hash01(id: string, salt = 0): number {
   return ((h >>> 0) % 10000) / 10000;
 }
 
-// A pointed-oval leaf silhouette, built once and reused (scaled per node).
-const LEAF_GEOMETRY = (() => {
-  const s = new THREE.Shape();
-  s.moveTo(0, -0.5);
-  s.bezierCurveTo(0.42, -0.18, 0.34, 0.5, 0, 0.72);
-  s.bezierCurveTo(-0.34, 0.5, -0.42, -0.18, 0, -0.5);
-  const g = new THREE.ShapeGeometry(s, 14);
-  g.center();
-  return g;
-})();
+/* ---------- Procedural textures (canvas-generated; no external assets) ---------- */
 
-// Slight per-node hue/lightness jitter so the canopy reads as many leaves, not one paint.
-function tintFor(kind: string, id: string): string {
-  const base = COLORS[kind] ?? "#9ad0b0";
-  if (kind !== "LEAF" && kind !== "FLOWER" && kind !== "FRUIT") return base;
-  const c = new THREE.Color(base);
-  const hueJitter = (hash01(id, 21) - 0.5) * 0.08;
-  const lightJitter = (hash01(id, 42) - 0.5) * 0.16;
-  c.offsetHSL(hueJitter, 0, lightJitter);
-  return `#${c.getHexString()}`;
+function makeLeafTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 160;
+  const x = c.getContext("2d")!;
+  x.clearRect(0, 0, 128, 160);
+  x.beginPath();
+  x.moveTo(64, 4);
+  x.bezierCurveTo(122, 42, 108, 132, 64, 156);
+  x.bezierCurveTo(20, 132, 6, 42, 64, 4);
+  x.closePath();
+  const g = x.createLinearGradient(0, 0, 40, 160);
+  g.addColorStop(0, "#8fce62");
+  g.addColorStop(0.5, "#4e9a3d");
+  g.addColorStop(1, "#2f6b2a");
+  x.fillStyle = g;
+  x.fill();
+  x.strokeStyle = "rgba(22,60,22,0.45)";
+  x.lineWidth = 2.5;
+  x.beginPath();
+  x.moveTo(64, 10);
+  x.lineTo(64, 150);
+  x.stroke();
+  x.lineWidth = 1;
+  for (let i = 1; i < 7; i++) {
+    const yy = 18 + i * 19;
+    x.beginPath();
+    x.moveTo(64, yy);
+    x.lineTo(64 + (i % 2 ? 28 : -28), yy - 15);
+    x.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
 }
+
+function makeBarkTexture(): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } {
+  const w = 256;
+  const h = 512;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const x = c.getContext("2d")!;
+  x.fillStyle = "#5b3f2a";
+  x.fillRect(0, 0, w, h);
+  const bc = document.createElement("canvas");
+  bc.width = w;
+  bc.height = h;
+  const bx = bc.getContext("2d")!;
+  bx.fillStyle = "#808080";
+  bx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 240; i++) {
+    const px = Math.random() * w;
+    const py = Math.random() * h;
+    const len = 50 + Math.random() * 240;
+    const dark = Math.random() < 0.55;
+    const a = 0.12 + Math.random() * 0.3;
+    const lw = 1 + Math.random() * 3.5;
+    const cx = (Math.random() - 0.5) * 8;
+    x.strokeStyle = dark ? `rgba(38,24,14,${a})` : `rgba(120,90,60,${a})`;
+    x.lineWidth = lw;
+    x.beginPath();
+    x.moveTo(px, py);
+    x.bezierCurveTo(px + cx, py + len * 0.5, px + cx, py + len, px + cx * 0.6, py + len);
+    x.stroke();
+    bx.strokeStyle = dark ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+    bx.lineWidth = lw;
+    bx.beginPath();
+    bx.moveTo(px, py);
+    bx.bezierCurveTo(px + cx, py + len * 0.5, px + cx, py + len, px + cx * 0.6, py + len);
+    bx.stroke();
+  }
+  const map = new THREE.CanvasTexture(c);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(1.5, 3);
+  const bump = new THREE.CanvasTexture(bc);
+  bump.wrapS = bump.wrapT = THREE.RepeatWrapping;
+  bump.repeat.set(1.5, 3);
+  return { map, bump };
+}
+
+function makeGrassTexture(): THREE.CanvasTexture {
+  const s = 256;
+  const c = document.createElement("canvas");
+  c.width = s;
+  c.height = s;
+  const x = c.getContext("2d")!;
+  x.fillStyle = "#3f6f34";
+  x.fillRect(0, 0, s, s);
+  for (let i = 0; i < 6000; i++) {
+    x.fillStyle = `rgba(${28 + Math.random() * 46},${78 + Math.random() * 70},${30 + Math.random() * 44},0.5)`;
+    x.fillRect(Math.random() * s, Math.random() * s, 2, 2 + Math.random() * 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(24, 24);
+  return tex;
+}
+
+function makeRadialShadow(): THREE.CanvasTexture {
+  const s = 256;
+  const c = document.createElement("canvas");
+  c.width = s;
+  c.height = s;
+  const x = c.getContext("2d")!;
+  const g = x.createRadialGradient(128, 128, 8, 128, 128, 128);
+  g.addColorStop(0, "rgba(0,0,0,0.5)");
+  g.addColorStop(0.7, "rgba(0,0,0,0.22)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  x.fillStyle = g;
+  x.fillRect(0, 0, s, s);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ---------- Scene ---------- */
 
 interface Props {
   graph: ForestGraph;
@@ -67,6 +174,18 @@ interface Props {
 
 export default function ForestCanvas({ graph, selectedId, focusId, onSelect }: Props) {
   const layout = useMemo(() => computeLayout(graph), [graph]);
+  const stageIdx = STAGE_INDEX[graph.stage];
+
+  const bark = useMemo(makeBarkTexture, []);
+  const leafTex = useMemo(makeLeafTexture, []);
+  const grass = useMemo(makeGrassTexture, []);
+  const shadowTex = useMemo(makeRadialShadow, []);
+
+  const crown = CROWN[graph.stage];
+  const crownCenter = useMemo<Vec3>(
+    () => [0, layout.trunkHeight + crown.r * 0.45, 0],
+    [layout.trunkHeight, crown.r],
+  );
 
   const focusPos = useMemo<Vec3 | null>(() => {
     if (!focusId) return null;
@@ -77,56 +196,50 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect }: P
   return (
     <Canvas
       shadows
-      camera={{ position: [4.5, 3.2, 6.5], fov: 50 }}
+      camera={{ position: [6, 3.6, 8], fov: 48 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       onPointerMissed={() => onSelect(null)}
     >
-      {/* Warm daytime sky + hazy horizon. */}
       <color attach="background" args={["#cfe3d6"]} />
-      <Sky
-        distance={450000}
-        sunPosition={SUN_POSITION}
-        turbidity={7}
-        rayleigh={1.6}
-        mieCoefficient={0.006}
-        mieDirectionalG={0.82}
-      />
-      <fog attach="fog" args={["#d7e6d2", 18, 55]} />
+      <Sky distance={450000} sunPosition={SUN_POSITION} turbidity={6} rayleigh={1.4} mieCoefficient={0.006} mieDirectionalG={0.85} />
+      <fog attach="fog" args={["#d7e6d2", 22, 65]} />
 
-      <ambientLight intensity={0.55} />
-      <hemisphereLight args={["#dff0e2", "#5a6b3f", 0.7]} />
+      <ambientLight intensity={0.4} />
+      <hemisphereLight args={["#e6f2e6", "#4a5b34", 0.65]} />
       <directionalLight
         position={SUN_POSITION}
-        intensity={1.4}
-        color="#ffe9c6"
+        intensity={2.1}
+        color="#fff1d6"
         castShadow
-        shadow-mapSize={[1024, 1024]}
+        shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0004}
+        shadow-camera-near={1}
+        shadow-camera-far={90}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={12}
+        shadow-camera-bottom={-4}
       />
-      <pointLight position={[0, layout.trunkHeight + 1.5, 0]} intensity={0.35} color="#ffe6b0" distance={12} />
 
       <Hills />
-      <Ground />
+      <Ground grass={grass} />
+      {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
       <Motes trunkHeight={layout.trunkHeight} />
 
-      {/* Structural limbs — branches & roots as curved tubes, fine twigs as lines. */}
-      {layout.limbs.map((limb, i) =>
-        limb.kind === "twig" ? (
-          <Line
-            key={i}
-            points={[limb.from, limb.to]}
-            color="#6b4a35"
-            lineWidth={1.4}
-            transparent
-            opacity={0.75}
-          />
-        ) : (
-          <Branch key={i} limb={limb} />
-        ),
-      )}
+      {/* Woody structure. */}
+      <Trunk height={layout.trunkHeight} stageIdx={stageIdx} bark={bark} />
+      {layout.limbs
+        .filter((l) => l.kind !== "twig")
+        .map((limb, i) => (
+          <Branch key={i} limb={limb} bark={bark} />
+        ))}
 
-      {/* Trunk drawn as a tapered cylinder from the ground up. */}
-      <Trunk height={layout.trunkHeight} />
+      {/* Decorative full canopy. */}
+      {crown.count > 0 ? (
+        <Canopy center={crownCenter} radius={crown.r} count={crown.count} leafTex={leafTex} />
+      ) : null}
 
-      {/* Every other node as a glyph. */}
+      {/* Interactive memory nodes (glow within the canopy). */}
       {layout.positioned
         .filter((p) => p.node.kind !== "TRUNK" && !HIDDEN.has(p.node.kind))
         .map((p) => (
@@ -135,6 +248,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect }: P
             positioned={p}
             selected={p.node.id === selectedId}
             justGrew={p.node.id === focusId}
+            leafTex={leafTex}
             onSelect={onSelect}
           />
         ))}
@@ -143,39 +257,128 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect }: P
         makeDefault
         enablePan
         enableZoom
-        minDistance={2}
-        maxDistance={22}
+        minDistance={2.5}
+        maxDistance={30}
         maxPolarAngle={Math.PI / 2.05}
-        target={[0, layout.trunkHeight * 0.5, 0]}
+        target={[0, layout.trunkHeight * 0.55, 0]}
       />
       <CameraRig focusPos={focusPos} />
     </Canvas>
   );
 }
 
-/** When a node is freshly grown, glide the camera to frame it for a few seconds. */
 function CameraRig({ focusPos }: { focusPos: Vec3 | null }) {
   const tmpTarget = useRef(new THREE.Vector3());
   const tmpCam = useRef(new THREE.Vector3());
-
   useFrame((state, delta) => {
-    const controls = state.controls as unknown as
-      | { target: THREE.Vector3; update: () => void }
-      | null;
+    const controls = state.controls as unknown as { target: THREE.Vector3; update: () => void } | null;
     if (!controls || !focusPos) return;
     const k = 1 - Math.pow(0.0016, delta);
     tmpTarget.current.set(focusPos[0], focusPos[1], focusPos[2]);
     controls.target.lerp(tmpTarget.current, k);
-    tmpCam.current.set(focusPos[0] + 2.4, focusPos[1] + 1.5, focusPos[2] + 3.2);
-    state.camera.position.lerp(tmpCam.current, k * 0.55);
+    tmpCam.current.set(focusPos[0] + 2.6, focusPos[1] + 1.6, focusPos[2] + 3.4);
+    state.camera.position.lerp(tmpCam.current, k * 0.5);
     controls.update();
   });
-
   return null;
 }
 
-/** A curved, tapered woody limb between two points. Branches bow up, roots bow down. */
-function Branch({ limb }: { limb: Limb }) {
+/* ---------- Canopy ---------- */
+
+function Canopy({
+  center,
+  radius,
+  count,
+  leafTex,
+}: {
+  center: Vec3;
+  radius: number;
+  count: number;
+  leafTex: THREE.CanvasTexture;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const matRef = useRef<THREE.MeshStandardMaterial>(null);
+  const shaderRef = useRef<{ uniforms: { uTime: { value: number } } } | null>(null);
+
+  // Lumpy crown: a handful of sub-cluster centers so the silhouette isn't a perfect ball.
+  const clusters = useMemo(() => {
+    const out: Vec3[] = [];
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + hash01(`c${i}`, 2) * 1.2;
+      const rr = radius * (0.35 + hash01(`c${i}`, 5) * 0.4);
+      out.push([Math.cos(a) * rr, (hash01(`c${i}`, 9) - 0.35) * radius * 0.7, Math.sin(a) * rr]);
+    }
+    return out;
+  }, [radius]);
+
+  useLayoutEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const dummy = new THREE.Object3D();
+    const color = new THREE.Color();
+    for (let i = 0; i < count; i++) {
+      const c = clusters[i % clusters.length];
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * Math.PI * 2;
+      const phi = Math.acos(2 * v - 1);
+      const rr = radius * (0.4 + Math.random() * 0.55);
+      const px = center[0] + c[0] + Math.sin(phi) * Math.cos(theta) * rr;
+      const py = center[1] + c[1] + Math.cos(phi) * rr * 0.92;
+      const pz = center[2] + c[2] + Math.sin(phi) * Math.sin(theta) * rr;
+      dummy.position.set(px, py, pz);
+      dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      dummy.scale.setScalar(0.24 + Math.random() * 0.2);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+      // Inner leaves darker (fake ambient occlusion), outer brighter.
+      const depth = Math.hypot(px - center[0], py - center[1], pz - center[2]) / (radius * 1.4);
+      const l = THREE.MathUtils.clamp(0.16 + depth * 0.28 + (Math.random() - 0.5) * 0.08, 0.1, 0.5);
+      color.setHSL(0.27 + (Math.random() - 0.5) * 0.05, 0.5, l);
+      mesh.setColorAt(i, color);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }, [count, radius, center, clusters]);
+
+  useLayoutEffect(() => {
+    const mat = matRef.current;
+    if (!mat) return;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uTime = { value: 0 };
+      shader.vertexShader =
+        "uniform float uTime;\n" +
+        shader.vertexShader.replace(
+          "#include <begin_vertex>",
+          `#include <begin_vertex>
+           #ifdef USE_INSTANCING
+           float ph = instanceMatrix[3].x * 1.7 + instanceMatrix[3].z * 0.9;
+           transformed.x += sin(uTime * 1.4 + ph) * 0.06;
+           transformed.z += cos(uTime * 1.1 + ph) * 0.05;
+           transformed.y += sin(uTime * 0.8 + ph) * 0.025;
+           #endif`,
+        );
+      shaderRef.current = shader as unknown as { uniforms: { uTime: { value: number } } };
+    };
+    mat.needsUpdate = true;
+  }, []);
+
+  useFrame((state) => {
+    if (shaderRef.current) shaderRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+  });
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, count]} frustumCulled={false} receiveShadow>
+      <planeGeometry args={[1, 1.3]} />
+      <meshStandardMaterial ref={matRef} map={leafTex} alphaTest={0.5} side={THREE.DoubleSide} roughness={0.85} metalness={0} />
+    </instancedMesh>
+  );
+}
+
+/* ---------- Woody parts ---------- */
+
+function Branch({ limb, bark }: { limb: Limb; bark: { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } }) {
   const geometry = useMemo(() => {
     const a = new THREE.Vector3(...limb.from);
     const b = new THREE.Vector3(...limb.to);
@@ -183,32 +386,23 @@ function Branch({ limb }: { limb: Limb }) {
     const len = a.distanceTo(b);
     mid.y += len * (limb.kind === "root" ? -0.28 : 0.32);
     const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
-    const radius = limb.kind === "root" ? 0.045 : 0.06;
-    // Taper along the length by scaling per-segment radii.
-    const geo = new THREE.TubeGeometry(curve, 14, radius, 7, false);
-    taperTube(geo, 14, 7, radius, radius * 0.35);
+    const radius = limb.kind === "root" ? 0.06 : 0.09;
+    const geo = new THREE.TubeGeometry(curve, 16, radius, 8, false);
+    taperTube(geo, 16, 8, radius, radius * 0.3);
     return geo;
   }, [limb]);
-
-  const color = limb.kind === "root" ? "#4a3222" : "#5b3a29";
+  const color = limb.kind === "root" ? "#4a3222" : "#6b4a30";
   return (
     <mesh geometry={geometry} castShadow receiveShadow>
-      <meshStandardMaterial color={color} roughness={0.95} />
+      <meshStandardMaterial color={color} map={bark.map} bumpMap={bark.bump} bumpScale={0.02} roughness={0.95} />
     </mesh>
   );
 }
 
-/** Shrink a TubeGeometry's radius from base to tip for a natural taper. */
-function taperTube(
-  geo: THREE.TubeGeometry,
-  tubularSegments: number,
-  radialSegments: number,
-  rBase: number,
-  rTip: number,
-) {
+function taperTube(geo: THREE.TubeGeometry, tubularSegments: number, radialSegments: number, rBase: number, rTip: number) {
   const pos = geo.attributes.position as THREE.BufferAttribute;
-  const frames = geo.parameters.path.computeFrenetFrames(tubularSegments, false);
   const path = geo.parameters.path;
+  const frames = path.computeFrenetFrames(tubularSegments, false);
   let idx = 0;
   for (let i = 0; i <= tubularSegments; i++) {
     const t = i / tubularSegments;
@@ -231,43 +425,57 @@ function taperTube(
   geo.computeVertexNormals();
 }
 
-/** Grassy ground: a broad green disc plus a softer inner clearing. */
-function Ground() {
+function Trunk({
+  height,
+  stageIdx,
+  bark,
+}: {
+  height: number;
+  stageIdx: number;
+  bark: { map: THREE.CanvasTexture; bump: THREE.CanvasTexture };
+}) {
+  const rBottom = 0.18 + stageIdx * 0.07;
+  const rTop = rBottom * 0.45;
   return (
-    <group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} receiveShadow>
-        <circleGeometry args={[60, 64]} />
-        <meshStandardMaterial color="#4c7a3a" roughness={1} />
-      </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <circleGeometry args={[10, 48]} />
-        <meshStandardMaterial color="#5c8a44" roughness={1} />
-      </mesh>
-    </group>
+    <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
+      <cylinderGeometry args={[rTop, rBottom, height, 20, 4]} />
+      <meshStandardMaterial color="#6b4a30" map={bark.map} bumpMap={bark.bump} bumpScale={0.03} roughness={0.95} />
+    </mesh>
   );
 }
 
-/** Low-poly rolling hills ringed around the horizon, hazed by fog. */
+function Ground({ grass }: { grass: THREE.CanvasTexture }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+      <circleGeometry args={[60, 64]} />
+      <meshStandardMaterial map={grass} color="#6f9a58" roughness={1} />
+    </mesh>
+  );
+}
+
+function CanopyShadow({ tex, center, radius }: { tex: THREE.CanvasTexture; center: Vec3; radius: number }) {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[center[0], 0.02, center[2]]}>
+      <planeGeometry args={[radius * 3.2, radius * 3.2]} />
+      <meshBasicMaterial map={tex} transparent depthWrite={false} opacity={0.85} />
+    </mesh>
+  );
+}
+
 function Hills() {
   const hills = useMemo(() => {
     const out: { pos: Vec3; scale: Vec3; color: string }[] = [];
     const count = 14;
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + hash01(`h${i}`, 3) * 0.3;
-      const r = 34 + hash01(`h${i}`, 7) * 12;
-      const w = 10 + hash01(`h${i}`, 11) * 12;
-      const h = 3 + hash01(`h${i}`, 5) * 5;
-      const green = 0.28 + hash01(`h${i}`, 9) * 0.12;
-      const c = new THREE.Color().setHSL(0.28, 0.35, green);
-      out.push({
-        pos: [Math.cos(a) * r, -1.5, Math.sin(a) * r],
-        scale: [w, h, w],
-        color: `#${c.getHexString()}`,
-      });
+      const r = 36 + hash01(`h${i}`, 7) * 14;
+      const w = 12 + hash01(`h${i}`, 11) * 14;
+      const h = 3 + hash01(`h${i}`, 5) * 6;
+      const c = new THREE.Color().setHSL(0.28, 0.34, 0.28 + hash01(`h${i}`, 9) * 0.12);
+      out.push({ pos: [Math.cos(a) * r, -1.5, Math.sin(a) * r], scale: [w, h, w], color: `#${c.getHexString()}` });
     }
     return out;
   }, []);
-
   return (
     <group>
       {hills.map((hill, i) => (
@@ -280,28 +488,17 @@ function Hills() {
   );
 }
 
-function Trunk({ height }: { height: number }) {
-  return (
-    <mesh position={[0, height / 2, 0]} castShadow>
-      <cylinderGeometry args={[0.12, 0.28, height, 12]} />
-      <meshStandardMaterial color={COLORS.TRUNK} roughness={0.9} />
-    </mesh>
-  );
-}
-
-/** Drifting warm motes (pollen / fireflies) that give the air some life. */
 function Motes({ trunkHeight }: { trunkHeight: number }) {
   const ref = useRef<THREE.Points>(null);
-  const COUNT = 70;
-
+  const COUNT = 60;
   const { geometry, speeds } = useMemo(() => {
     const positions = new Float32Array(COUNT * 3);
     const speeds = new Float32Array(COUNT);
     for (let i = 0; i < COUNT; i++) {
       const a = Math.random() * Math.PI * 2;
-      const r = 0.5 + Math.random() * 5.5;
+      const r = 0.5 + Math.random() * 6;
       positions[i * 3] = Math.cos(a) * r;
-      positions[i * 3 + 1] = Math.random() * (trunkHeight + 3);
+      positions[i * 3 + 1] = Math.random() * (trunkHeight + 4);
       positions[i * 3 + 2] = Math.sin(a) * r;
       speeds[i] = 0.05 + Math.random() * 0.12;
     }
@@ -309,52 +506,44 @@ function Motes({ trunkHeight }: { trunkHeight: number }) {
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     return { geometry, speeds };
   }, [trunkHeight]);
-
   useFrame((state, delta) => {
     if (!ref.current) return;
     const pos = ref.current.geometry.attributes.position as THREE.BufferAttribute;
-    const ceiling = trunkHeight + 3;
+    const ceiling = trunkHeight + 4;
     const t = state.clock.elapsedTime;
     for (let i = 0; i < COUNT; i++) {
       let y = pos.getY(i) + speeds[i] * delta;
       if (y > ceiling) y = 0;
-      const x = pos.getX(i) + Math.sin(t * 0.3 + i) * delta * 0.05;
       pos.setY(i, y);
-      pos.setX(i, x);
+      pos.setX(i, pos.getX(i) + Math.sin(t * 0.3 + i) * delta * 0.05);
     }
     pos.needsUpdate = true;
   });
-
   return (
     <points ref={ref} geometry={geometry}>
-      <pointsMaterial
-        size={0.05}
-        color="#fff2c8"
-        transparent
-        opacity={0.4}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        sizeAttenuation
-      />
+      <pointsMaterial size={0.05} color="#fff2c8" transparent opacity={0.35} depthWrite={false} blending={THREE.AdditiveBlending} sizeAttenuation />
     </points>
   );
 }
+
+/* ---------- Interactive memory nodes ---------- */
 
 function NodeGlyph({
   positioned,
   selected,
   justGrew,
+  leafTex,
   onSelect,
 }: {
   positioned: PositionedNode;
   selected: boolean;
   justGrew: boolean;
+  leafTex: THREE.CanvasTexture;
   onSelect: (node: ForestNodeDTO | null) => void;
 }) {
   const { node, position, scale } = positioned;
   const [hovered, setHovered] = useState(false);
   const ref = useRef<THREE.Group>(null);
-  // Grow-in progress: springs 0 → 1 the first time this glyph exists.
   const appear = useRef(0);
 
   useFrame((state, delta) => {
@@ -362,15 +551,14 @@ function NodeGlyph({
     const t = state.clock.elapsedTime;
     appear.current = THREE.MathUtils.damp(appear.current, 1, 5, delta);
     const emphasis = selected ? 1.5 : hovered ? 1.25 : justGrew ? 1.3 : 1;
-    const s = appear.current * emphasis;
-    ref.current.scale.setScalar(s);
+    ref.current.scale.setScalar(appear.current * emphasis);
     if (node.kind === "LEAF" || node.kind === "FLOWER" || node.kind === "FRUIT") {
       ref.current.rotation.z = Math.sin(t * 0.9 + position[0]) * 0.09;
       ref.current.rotation.x = Math.cos(t * 0.7 + position[2]) * 0.05;
     }
   });
 
-  const color = tintFor(node.kind, node.id);
+  const color = COLORS[node.kind] ?? "#9ad0b0";
 
   return (
     <group
@@ -390,10 +578,10 @@ function NodeGlyph({
         onSelect(node);
       }}
     >
-      <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew} seed={hash01(node.id, 9)} />
+      <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew} leafTex={leafTex} seed={hash01(node.id, 9)} />
       {justGrew ? <GrowthBurst scale={scale} /> : null}
       {(hovered || selected) && (
-        <Html center distanceFactor={10} position={[0, scale + 0.4, 0]}>
+        <Html center distanceFactor={10} position={[0, scale + 0.5, 0]}>
           <div className="pointer-events-none select-none whitespace-nowrap rounded-full bg-black/80 px-3 py-1 text-xs text-parchment">
             {node.title}
           </div>
@@ -403,24 +591,19 @@ function NodeGlyph({
   );
 }
 
-/** An expanding, fading ring + glow that plays when a node first appears. */
 function GrowthBurst({ scale }: { scale: number }) {
   const ring = useRef<THREE.Mesh>(null);
   const start = useRef<number | null>(null);
-
   useFrame((state) => {
     if (!ring.current) return;
     if (start.current === null) start.current = state.clock.elapsedTime;
-    const life = 1.4;
     const age = state.clock.elapsedTime - start.current;
-    const p = Math.min(age / life, 1);
-    const s = 0.3 + p * 3.2;
+    const p = Math.min(age / 1.4, 1);
+    const s = 0.3 + p * 3.4;
     ring.current.scale.set(s, s, s);
-    const mat = ring.current.material as THREE.MeshBasicMaterial;
-    mat.opacity = (1 - p) * 0.7;
+    (ring.current.material as THREE.MeshBasicMaterial).opacity = (1 - p) * 0.7;
     ring.current.visible = p < 1;
   });
-
   return (
     <mesh ref={ring} rotation={[-Math.PI / 2, 0, 0]}>
       <ringGeometry args={[scale * 0.9, scale * 1.15, 32]} />
@@ -434,41 +617,32 @@ function Geometry({
   scale,
   color,
   glow,
+  leafTex,
   seed,
 }: {
   kind: string;
   scale: number;
   color: string;
   glow: boolean;
+  leafTex: THREE.CanvasTexture;
   seed: number;
 }) {
-  // A freshly grown object gets a warm emissive lift for a moment.
   const emissive = glow ? "#ffcf7a" : color;
-  const emissiveIntensity = glow ? 0.5 : 0;
+  // Memory nodes glow softly so they stand out from decorative canopy leaves.
+  const baseGlow = glow ? 0.7 : 0.35;
 
   switch (kind) {
     case "SEED":
       return (
         <mesh castShadow>
           <sphereGeometry args={[scale, 16, 16]} />
-          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={glow ? 0.6 : 0} />
         </mesh>
       );
     case "LEAF":
       return (
-        <mesh
-          geometry={LEAF_GEOMETRY}
-          scale={scale * 3}
-          rotation={[-0.5, seed * Math.PI * 2, seed * 0.6 - 0.3]}
-          castShadow
-        >
-          <meshStandardMaterial
-            color={color}
-            roughness={0.55}
-            side={THREE.DoubleSide}
-            emissive={emissive}
-            emissiveIntensity={emissiveIntensity}
-          />
+        <mesh geometry={LEAF_MEMORY_GEOMETRY} scale={scale * 4} rotation={[-0.5, seed * Math.PI * 2, seed * 0.6 - 0.3]} castShadow>
+          <meshStandardMaterial map={leafTex} alphaTest={0.4} side={THREE.DoubleSide} roughness={0.5} emissive={emissive} emissiveIntensity={baseGlow} emissiveMap={leafTex} />
         </mesh>
       );
     case "FLOWER":
@@ -476,15 +650,15 @@ function Geometry({
     case "FRUIT":
       return (
         <mesh castShadow>
-          <sphereGeometry args={[scale, 16, 16]} />
-          <meshStandardMaterial color={color} roughness={0.35} metalness={0.1} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+          <sphereGeometry args={[scale * 1.2, 18, 18]} />
+          <meshStandardMaterial color={color} roughness={0.3} metalness={0.05} emissive={emissive} emissiveIntensity={baseGlow} />
         </mesh>
       );
     case "PHOTO":
       return (
         <mesh castShadow>
-          <boxGeometry args={[scale * 1.4, scale * 1.4, scale * 0.15]} />
-          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+          <boxGeometry args={[scale * 1.5, scale * 1.5, scale * 0.15]} />
+          <meshStandardMaterial color={color} roughness={0.5} emissive={emissive} emissiveIntensity={baseGlow} />
         </mesh>
       );
     case "PERSON":
@@ -492,7 +666,7 @@ function Geometry({
         <group>
           <mesh position={[0, scale * 0.35, 0]} castShadow>
             <coneGeometry args={[scale * 0.7, scale * 1.2, 8]} />
-            <meshStandardMaterial color={color} roughness={0.7} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+            <meshStandardMaterial color={color} roughness={0.7} emissive={emissive} emissiveIntensity={baseGlow} />
           </mesh>
           <mesh position={[0, -scale * 0.4, 0]}>
             <cylinderGeometry args={[scale * 0.12, scale * 0.12, scale * 0.6, 6]} />
@@ -503,21 +677,31 @@ function Geometry({
     case "ROOT":
       return (
         <mesh>
-          <sphereGeometry args={[scale, 10, 10]} />
-          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+          <sphereGeometry args={[scale, 12, 12]} />
+          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={baseGlow} />
         </mesh>
       );
     default:
       return (
         <mesh castShadow>
           <octahedronGeometry args={[scale, 0]} />
-          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={baseGlow} />
         </mesh>
       );
   }
 }
 
-/** A small bloom: five petals around a golden center. */
+// A slightly stouter leaf silhouette for interactive memory leaves.
+const LEAF_MEMORY_GEOMETRY = (() => {
+  const s = new THREE.Shape();
+  s.moveTo(0, -0.5);
+  s.bezierCurveTo(0.42, -0.18, 0.34, 0.5, 0, 0.72);
+  s.bezierCurveTo(-0.34, 0.5, -0.42, -0.18, 0, -0.5);
+  const g = new THREE.ShapeGeometry(s, 14);
+  g.center();
+  return g;
+})();
+
 function Flower({ scale, color, glow }: { scale: number; color: string; glow: boolean }) {
   const petals = [0, 1, 2, 3, 4];
   return (
@@ -525,26 +709,14 @@ function Flower({ scale, color, glow }: { scale: number; color: string; glow: bo
       {petals.map((i) => {
         const a = (i / petals.length) * Math.PI * 2;
         return (
-          <mesh
-            key={i}
-            geometry={LEAF_GEOMETRY}
-            position={[Math.cos(a) * scale * 0.5, 0, Math.sin(a) * scale * 0.5]}
-            rotation={[-Math.PI / 2, 0, a]}
-            scale={scale * 1.6}
-          >
-            <meshStandardMaterial
-              color={color}
-              side={THREE.DoubleSide}
-              roughness={0.5}
-              emissive={glow ? "#ffcf7a" : color}
-              emissiveIntensity={glow ? 0.5 : 0.15}
-            />
+          <mesh key={i} geometry={LEAF_MEMORY_GEOMETRY} position={[Math.cos(a) * scale * 0.5, 0, Math.sin(a) * scale * 0.5]} rotation={[-Math.PI / 2, 0, a]} scale={scale * 1.8}>
+            <meshStandardMaterial color={color} side={THREE.DoubleSide} roughness={0.5} emissive={glow ? "#ffcf7a" : color} emissiveIntensity={glow ? 0.6 : 0.3} />
           </mesh>
         );
       })}
       <mesh>
-        <sphereGeometry args={[scale * 0.35, 12, 12]} />
-        <meshStandardMaterial color="#f4c95d" emissive="#f4c95d" emissiveIntensity={0.3} />
+        <sphereGeometry args={[scale * 0.4, 12, 12]} />
+        <meshStandardMaterial color="#f4c95d" emissive="#f4c95d" emissiveIntensity={0.5} />
       </mesh>
     </group>
   );
