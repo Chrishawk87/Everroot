@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { GROWTH_STAGES } from "@/lib/forest/types";
 import ShareClipButton, { isClipKind } from "./ShareClipButton";
+import StoryFeedPlayer from "./StoryFeedPlayer";
 
 const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
   ssr: false,
@@ -21,9 +22,11 @@ const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
 export default function ReadOnlyForest({
   graph,
   relationship,
+  ownerId,
 }: {
   graph: ForestGraph;
   relationship: string | null;
+  ownerId: string;
 }) {
   const [selected, setSelected] = useState<ForestNodeDTO | null>(null);
   const stageMeta = GROWTH_STAGES.find((s) => s.stage === graph.stage);
@@ -51,6 +54,9 @@ export default function ReadOnlyForest({
         <p className="mt-2 text-xs text-parchment/40">
           {memoryCount} memories · {graph.counts.PERSON} family · {graph.counts.ROOT} roots
         </p>
+        <div className="pointer-events-auto mt-3">
+          <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} />
+        </div>
       </div>
 
       <Link

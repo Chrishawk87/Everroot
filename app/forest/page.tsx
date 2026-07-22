@@ -17,5 +17,5 @@ export default async function ForestPage() {
     redirect("/signup");
   }
 
-  return <ForestExperience graph={graph} />;
+  return <ForestExperience graph={graph} ownerId={session.user.id} />;
 }

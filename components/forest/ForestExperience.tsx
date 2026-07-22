@@ -9,6 +9,7 @@ import { GROWTH_STAGES } from "@/lib/forest/types";
 import GrowthPanel from "./GrowthPanel";
 import InviteButton from "./InviteButton";
 import ShareClipButton, { isClipKind } from "./ShareClipButton";
+import StoryFeedPlayer from "./StoryFeedPlayer";
 import { signOutAction } from "@/app/actions/forest";
 
 // three.js only runs in the browser — load the canvas without SSR.
@@ -45,7 +46,7 @@ const GREW_VERB: Record<string, string> = {
   SEED: "A seed was planted",
 };
 
-export default function ForestExperience({ graph }: { graph: ForestGraph }) {
+export default function ForestExperience({ graph, ownerId }: { graph: ForestGraph; ownerId: string }) {
   const router = useRouter();
   const [selected, setSelected] = useState<ForestNodeDTO | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -233,6 +234,9 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
             <span className="block text-xs text-white/80">Answer a few questions aloud — watch your tree grow</span>
           </span>
         </Link>
+        <div className="mb-3">
+          <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
+        </div>
         <div className="rounded-2xl border border-parchment/15 bg-black/70 backdrop-blur">
           <button
             onClick={() => setPanelOpen((o) => !o)}

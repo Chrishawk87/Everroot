@@ -22,5 +22,7 @@ export default async function MemberForestPage({
   const member = family?.members.find((m) => m.userId === params.userId);
   if (!member) redirect("/family");
 
-  return <ReadOnlyForest graph={member.graph} relationship={member.relationship} />;
+  return (
+    <ReadOnlyForest graph={member.graph} relationship={member.relationship} ownerId={member.userId} />
+  );
 }

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { stageForScore, type ForestGraph, type ForestNodeDTO, type ForestEdgeDTO } from "./types";
 import type { NodeKind } from "@prisma/client";
 import { findForwardLinks, findReverseLinks, linkedUserIdOf, isLinkedFamily } from "@/lib/family-links";
-import { findRecordingForNode } from "@/lib/recordings";
+import { findRecordingForNode, listRecordingsForUser } from "@/lib/recordings";
 
 const ALL_KINDS: NodeKind[] = [
   "SEED", "ROOT", "TRUNK", "BRANCH", "SUB_BRANCH", "LEAF", "FLOWER",
@@ -197,5 +197,85 @@ export async function getMemoryClip(nodeId: string, viewerId: string): Promise<M
     recordingId: rec?.id ?? null,
     durationMs: rec?.durationMs ?? 0,
     canView: true,
+  };
+}
+
+// One recorded memory as an episode in a person's story feed — the tree's whole
+// spoken life, strung together in the order it was told.
+export interface StoryEpisode {
+  recordingId: string;
+  nodeId: string;
+  title: string;
+  question: string | null;
+  epoch: string | null;
+  mimeType: string;
+  durationMs: number;
+  createdAt: string;
+}
+
+// A person's story feed — every recording they've made, in order, ready to play
+// or download as one listenable life story.
+export interface StoryFeed {
+  ownerId: string;
+  tellerName: string;
+  tellerRole: string | null;
+  episodes: StoryEpisode[];
+  totalDurationMs: number;
+  canListen: boolean;
+}
+
+/**
+ * Compile a person's recorded memories into a single ordered story feed.
+ * Access mirrors the memory clip: the owner and their linked family only. When
+ * the viewer isn't allowed, `canListen` is false and no episodes are exposed.
+ */
+export async function getStoryFeed(ownerId: string, viewerId: string): Promise<StoryFeed | null> {
+  const profile = await prisma.profile.findUnique({ where: { userId: ownerId } });
+  if (!profile) return null;
+
+  const allowed = await isLinkedFamily(viewerId, ownerId);
+  if (!allowed) {
+    return {
+      ownerId,
+      tellerName: profile.displayName,
+      tellerRole: profile.familyPosition,
+      episodes: [],
+      totalDurationMs: 0,
+      canListen: false,
+    };
+  }
+
+  const [recs, nodes] = await Promise.all([
+    listRecordingsForUser(ownerId),
+    prisma.forestNode.findMany({
+      where: { userId: ownerId },
+      select: { id: true, title: true, epoch: true },
+    }),
+  ]);
+
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const episodes: StoryEpisode[] = recs.map((r) => {
+    const n = nodeById.get(r.nodeId);
+    return {
+      recordingId: r.id,
+      nodeId: r.nodeId,
+      title: n?.title ?? "A memory",
+      question: r.question,
+      epoch: n?.epoch ?? null,
+      mimeType: r.mimeType,
+      durationMs: r.durationMs,
+      createdAt: r.createdAt.toISOString(),
+    };
+  });
+
+  const totalDurationMs = episodes.reduce((sum, e) => sum + (e.durationMs || 0), 0);
+
+  return {
+    ownerId,
+    tellerName: profile.displayName,
+    tellerRole: profile.familyPosition,
+    episodes,
+    totalDurationMs,
+    canListen: true,
   };
 }

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 // Stream a stored voice recording to its owner or their linked family (so
 // shared memory clips play for the whole family forest).
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
@@ -23,12 +23,19 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   }
 
   const body = Buffer.from(rec.bytes);
-  return new Response(body, {
-    status: 200,
-    headers: {
-      "Content-Type": rec.mimeType || "audio/webm",
-      "Content-Length": String(body.byteLength),
-      "Cache-Control": "private, max-age=31536000, immutable",
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": rec.mimeType || "audio/webm",
+    "Content-Length": String(body.byteLength),
+    "Cache-Control": "private, max-age=31536000, immutable",
+  };
+
+  // `?download=<name>` turns the stream into a saved file so a memory can be
+  // shared as a download rather than a live link.
+  const downloadName = new URL(req.url).searchParams.get("download");
+  if (downloadName) {
+    const safe = downloadName.replace(/[^\w.\- ]+/g, "_").slice(0, 120) || "memory";
+    headers["Content-Disposition"] = `attachment; filename="${safe}"`;
+  }
+
+  return new Response(body, { status: 200, headers });
 }

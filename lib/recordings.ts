@@ -35,6 +35,18 @@ export interface CreateRecordingInput {
   question?: string | null;
 }
 
+// Lean recording metadata — everything a story feed needs EXCEPT the audio
+// bytes, which are streamed on demand via /api/recordings/[id].
+export interface RecordingMeta {
+  id: string;
+  nodeId: string;
+  mimeType: string;
+  durationMs: number;
+  transcript: string | null;
+  question: string | null;
+  createdAt: Date;
+}
+
 interface RecordingDelegate {
   create(args: { data: CreateRecordingInput }): Promise<RecordingRow>;
   findUnique(args: { where: { id: string } }): Promise<RecordingRow | null>;
@@ -42,6 +54,19 @@ interface RecordingDelegate {
     where: { nodeId: string };
     orderBy?: { createdAt?: "asc" | "desc" };
   }): Promise<RecordingRow | null>;
+  findMany(args: {
+    where: { userId: string };
+    orderBy?: { createdAt?: "asc" | "desc" };
+    select?: {
+      id?: boolean;
+      nodeId?: boolean;
+      mimeType?: boolean;
+      durationMs?: boolean;
+      transcript?: boolean;
+      question?: boolean;
+      createdAt?: boolean;
+    };
+  }): Promise<RecordingMeta[]>;
 }
 
 export function recordings(): RecordingDelegate {
@@ -51,4 +76,25 @@ export function recordings(): RecordingDelegate {
 /** The most recent recording attached to a memory node, if any. */
 export function findRecordingForNode(nodeId: string): Promise<RecordingRow | null> {
   return recordings().findFirst({ where: { nodeId }, orderBy: { createdAt: "desc" } });
+}
+
+/**
+ * Every recording a user has made, oldest→newest — the raw material for their
+ * story feed. Omits the audio bytes so we don't pull whole recordings into
+ * memory; the player streams each one from /api/recordings/[id] as it plays.
+ */
+export function listRecordingsForUser(userId: string): Promise<RecordingMeta[]> {
+  return recordings().findMany({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      nodeId: true,
+      mimeType: true,
+      durationMs: true,
+      transcript: true,
+      question: true,
+      createdAt: true,
+    },
+  });
 }
