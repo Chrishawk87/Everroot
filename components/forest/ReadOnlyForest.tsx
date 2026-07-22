@@ -7,6 +7,7 @@ import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { GROWTH_STAGES } from "@/lib/forest/types";
 import ShareClipButton, { isClipKind } from "./ShareClipButton";
 import StoryFeedPlayer from "./StoryFeedPlayer";
+import CapsulePanel from "./CapsulePanel";
 
 const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
   ssr: false,
@@ -66,6 +67,7 @@ export default function ReadOnlyForest({
             </svg>
             Book of the Tree
           </Link>
+          <CapsulePanel ownerId={ownerId} ownerName={graph.profile.displayName} />
         </div>
       </div>
 

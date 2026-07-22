@@ -3,6 +3,7 @@ import { GROWTH_STAGES, stageForScore, type ForestGraph, type ForestNodeDTO, typ
 import type { NodeKind, LifeEpoch } from "@prisma/client";
 import { findForwardLinks, findReverseLinks, linkedUserIdOf, isLinkedFamily } from "@/lib/family-links";
 import { findRecordingForNode, listRecordingsForUser, type RecordingMeta } from "@/lib/recordings";
+import { listCapsulesForUser } from "@/lib/time-capsules";
 
 const ALL_KINDS: NodeKind[] = [
   "SEED", "ROOT", "TRUNK", "BRANCH", "SUB_BRANCH", "LEAF", "FLOWER",
@@ -426,4 +427,55 @@ export async function getBook(ownerId: string, viewerId: string): Promise<Book |
     family,
     canView: true,
   };
+}
+
+// One time capsule as seen by a viewer. When it's still sealed, `message` is
+// null — only the title, who it's for, and the unlock date are revealed.
+export interface CapsuleView {
+  id: string;
+  title: string;
+  recipient: string | null;
+  unlockAt: string;
+  sealed: boolean;
+  message: string | null;
+  createdAt: string;
+}
+
+export interface CapsuleFeed {
+  ownerId: string;
+  ownerName: string;
+  capsules: CapsuleView[];
+  canView: boolean;
+}
+
+/**
+ * A person's time capsules. Access mirrors the other legacy products — owner
+ * and linked family. Sealed capsules never expose their message until the
+ * unlock date has passed.
+ */
+export async function getCapsules(ownerId: string, viewerId: string): Promise<CapsuleFeed | null> {
+  const profile = await prisma.profile.findUnique({ where: { userId: ownerId } });
+  if (!profile) return null;
+
+  const allowed = await isLinkedFamily(viewerId, ownerId);
+  if (!allowed) {
+    return { ownerId, ownerName: profile.displayName, capsules: [], canView: false };
+  }
+
+  const now = Date.now();
+  const rows = await listCapsulesForUser(ownerId);
+  const capsuleViews: CapsuleView[] = rows.map((c) => {
+    const sealed = c.unlockAt.getTime() > now;
+    return {
+      id: c.id,
+      title: c.title,
+      recipient: c.recipient,
+      unlockAt: c.unlockAt.toISOString(),
+      sealed,
+      message: sealed ? null : c.message,
+      createdAt: c.createdAt.toISOString(),
+    };
+  });
+
+  return { ownerId, ownerName: profile.displayName, capsules: capsuleViews, canView: true };
 }

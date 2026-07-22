@@ -33,8 +33,30 @@ model User {
   // PERSON nodes in OTHER users' forests that point at this account (the
   // reverse side of a family link — lets us find who has linked to me).
   linkedFrom   ForestNode[] @relation("PersonLink")
+  // Sealed messages this user has left for the future.
+  timeCapsules TimeCapsule[] @relation("UserCapsules")
 
   @@map("users")
+}
+
+// A message sealed until a future date — "open on your 18th birthday", "read
+// this when I'm gone". It stays locked in the forest (only its title, who it's
+// for, and the unlock date are visible) until unlockAt passes, then the message
+// opens for the owner and their linked family.
+model TimeCapsule {
+  id         String   @id @default(cuid())
+  userId     String
+  title      String
+  message    String   @db.Text
+  // Free-text note of who the capsule is meant for, e.g. "For Ava".
+  recipient  String?
+  unlockAt   DateTime
+  createdAt  DateTime @default(now())
+
+  user       User     @relation("UserCapsules", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("time_capsules")
 }
 
 // A shareable invitation. The inviter generates a code tied to a placeholder

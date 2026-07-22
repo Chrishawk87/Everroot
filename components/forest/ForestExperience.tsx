@@ -10,6 +10,7 @@ import GrowthPanel from "./GrowthPanel";
 import InviteButton from "./InviteButton";
 import ShareClipButton, { isClipKind } from "./ShareClipButton";
 import StoryFeedPlayer from "./StoryFeedPlayer";
+import CapsulePanel from "./CapsulePanel";
 import { signOutAction } from "@/app/actions/forest";
 
 // three.js only runs in the browser — load the canvas without SSR.
@@ -246,6 +247,7 @@ export default function ForestExperience({ graph, ownerId }: { graph: ForestGrap
             </svg>
             Book of the Tree
           </Link>
+          <CapsulePanel ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
         </div>
         <div className="rounded-2xl border border-parchment/15 bg-black/70 backdrop-blur">
           <button
