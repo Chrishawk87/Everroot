@@ -26,6 +26,7 @@ model User {
   profile      Profile?
   nodes        ForestNode[]
   edges        ForestEdge[]
+  recordings   Recording[]
 
   @@map("users")
 }
@@ -107,9 +108,33 @@ model ForestNode {
   edgesFrom ForestEdge[] @relation("EdgeFrom")
   edgesTo   ForestEdge[] @relation("EdgeTo")
 
+  recordings Recording[]
+
   @@index([userId])
   @@index([userId, kind])
   @@map("forest_nodes")
+}
+
+// A voice recording captured during a life interview. The audio bytes live in
+// Postgres so the actual voice is preserved with the memory it grew. Served
+// (owner-only) via /api/recordings/[id] for future in-leaf playback.
+model Recording {
+  id         String   @id @default(cuid())
+  userId     String
+  nodeId     String   // the memory (ForestNode) this recording belongs to
+  mimeType   String   @default("audio/webm")
+  durationMs Int      @default(0)
+  bytes      Bytes    // raw audio blob
+  transcript String?  @db.Text
+  question   String?  // the interview question that prompted this answer
+  createdAt  DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  node       ForestNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([nodeId])
+  @@map("recordings")
 }
 
 // How nodes connect. CONTAINS builds the tree hierarchy (trunk contains branch,

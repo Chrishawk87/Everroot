@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { GROWTH_STAGES } from "@/lib/forest/types";
@@ -204,6 +205,22 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
 
       {/* Growth panel. */}
       <div className="absolute bottom-5 right-5 w-80 max-w-[90vw] font-sans">
+        {/* Primary action — the voice life interview. */}
+        <Link
+          href="/interview"
+          className="mb-3 flex items-center gap-3 rounded-2xl border border-fruit/40 bg-gradient-to-r from-canopy/80 to-canopy-light/70 px-5 py-3.5 text-left shadow-lg transition hover:border-fruit/70 hover:brightness-110"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 10a7 7 0 0 0 14 0" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+          </svg>
+          <span>
+            <span className="block font-serif text-lg leading-tight text-white">Record your story</span>
+            <span className="block text-xs text-white/80">Answer a few questions aloud — watch your tree grow</span>
+          </span>
+        </Link>
         <div className="rounded-2xl border border-parchment/15 bg-black/70 backdrop-blur">
           <button
             onClick={() => setPanelOpen((o) => !o)}
