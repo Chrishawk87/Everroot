@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isLinkedFamily } from "@/lib/family-links";
 import { grow } from "@/lib/forest/growth-engine";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   setGuardian,
   clearGuardian,
@@ -28,6 +29,10 @@ export async function appointGuardian(input: { guardianUserId: string }): Promis
   const session = await auth();
   const ownerId = session?.user?.id;
   if (!ownerId) return { ok: false, error: "Not signed in" };
+
+  if (!rateLimit(`guardian:${ownerId}`, 30, 10 * 60 * 1000).ok) {
+    return { ok: false, error: "You're doing that a lot — please wait a moment." };
+  }
 
   const guardianUserId = input.guardianUserId?.trim();
   if (!guardianUserId) return { ok: false, error: "Choose a family member" };
@@ -65,6 +70,10 @@ export async function setMemorialMode(input: {
   const viewerId = session?.user?.id;
   if (!viewerId) return { ok: false, error: "Not signed in" };
 
+  if (!rateLimit(`memorial:${viewerId}`, 30, 10 * 60 * 1000).ok) {
+    return { ok: false, error: "You're doing that a lot — please wait a moment." };
+  }
+
   const ownerId = input.ownerId?.trim();
   if (!ownerId) return { ok: false, error: "Missing forest" };
 
@@ -96,6 +105,10 @@ export async function addTribute(input: {
   const session = await auth();
   const viewerId = session?.user?.id;
   if (!viewerId) return { ok: false, error: "Not signed in" };
+
+  if (!rateLimit(`tribute:${viewerId}`, 30, 10 * 60 * 1000).ok) {
+    return { ok: false, error: "You're doing that a lot — please wait a moment." };
+  }
 
   const parsed = tributeSchema.safeParse(input);
   if (!parsed.success) {

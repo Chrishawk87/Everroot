@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { invites, linkedUserIdOf } from "@/lib/family-links";
+import { rateLimit } from "@/lib/rate-limit";
 
 // Human-friendly invite code — no ambiguous characters (0/O, 1/I/L).
 function generateCode(): string {
@@ -34,6 +35,10 @@ export async function createInvite(params: {
   const session = await auth();
   const inviterId = session?.user?.id;
   if (!inviterId) return { ok: false, error: "Not signed in" };
+
+  if (!rateLimit(`invite:${inviterId}`, 30, 10 * 60 * 1000).ok) {
+    return { ok: false, error: "You're creating invites quickly — please wait a moment." };
+  }
 
   let personNodeId = params.personNodeId ?? null;
   let inviteeName = params.personName ?? null;

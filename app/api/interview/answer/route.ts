@@ -5,9 +5,16 @@ import { prisma } from "@/lib/prisma";
 import { grow, ensurePerson, linkMention } from "@/lib/forest/growth-engine";
 import { recordings } from "@/lib/recordings";
 import { ALL_QUESTIONS, MOMENT_TYPE_BY_QUESTION } from "@/lib/interview/script";
+import { rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Largest audio blob we'll accept for one answer (~25 MB ≈ several minutes of
+// compressed webm). Guards the request body and the stored blob.
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+// Sane ceiling for a single transcript so a bad client can't store megabytes.
+const MAX_TRANSCRIPT_CHARS = 20_000;
 
 // Save one interview answer: grow a memory on the tree and (if provided) store
 // the voice recording alongside it. Uses a route handler rather than a server
@@ -19,6 +26,21 @@ export async function POST(req: Request) {
   }
   const userId = session.user.id;
 
+  // Generous per-user cap so a runaway client can't hammer the DB.
+  const limit = rateLimit(`answer:${userId}`, 120, 60 * 60 * 1000);
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "You're saving answers very quickly — please wait a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds(limit.retryAfterMs)) } },
+    );
+  }
+
+  // Reject oversized uploads before reading the whole body into memory.
+  const declaredLength = Number(req.headers.get("content-length") ?? 0);
+  if (declaredLength && declaredLength > MAX_AUDIO_BYTES + 1024 * 1024) {
+    return NextResponse.json({ error: "That recording is too large." }, { status: 413 });
+  }
+
   let form: FormData;
   try {
     form = await req.formData();
@@ -27,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   const questionId = String(form.get("questionId") ?? "");
-  const transcript = String(form.get("transcript") ?? "").trim();
+  const transcript = String(form.get("transcript") ?? "").trim().slice(0, MAX_TRANSCRIPT_CHARS);
   const durationMs = Number(form.get("durationMs") ?? 0) || 0;
   const audio = form.get("audio");
 
@@ -38,7 +60,11 @@ export async function POST(req: Request) {
   if (!transcript && !(audio instanceof Blob)) {
     return NextResponse.json({ error: "Nothing to save yet" }, { status: 400 });
   }
+  if (audio instanceof Blob && audio.size > MAX_AUDIO_BYTES) {
+    return NextResponse.json({ error: "That recording is too large." }, { status: 413 });
+  }
 
+  try {
   // Grow the memory. The transcript becomes the memory's story text.
   const result = await grow(userId, {
     type: question.interaction,
@@ -115,4 +141,11 @@ export async function POST(req: Request) {
     recordingId,
     linkedPeople,
   });
+  } catch (err) {
+    console.error("Failed to save interview answer:", err);
+    return NextResponse.json(
+      { error: "We couldn't save that just now. Please try again." },
+      { status: 500 },
+    );
+  }
 }

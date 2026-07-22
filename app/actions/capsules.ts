@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { auth } from "@/auth";
 import { capsules } from "@/lib/time-capsules";
+import { rateLimit } from "@/lib/rate-limit";
 
 const capsuleSchema = z.object({
   title: z.string().trim().min(1, "Give your capsule a title").max(120),
@@ -31,6 +32,10 @@ export async function createCapsule(input: {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) return { ok: false, error: "Not signed in" };
+
+  if (!rateLimit(`capsule:${userId}`, 30, 10 * 60 * 1000).ok) {
+    return { ok: false, error: "You're doing that a lot — please wait a moment." };
+  }
 
   const parsed = capsuleSchema.safeParse(input);
   if (!parsed.success) {

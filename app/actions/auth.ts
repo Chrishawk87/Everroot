@@ -2,11 +2,13 @@
 
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { headers } from "next/headers";
 import { AuthError } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
 import { plantSeed, linkAccounts } from "@/lib/forest/growth-engine";
 import { invites } from "@/lib/family-links";
+import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
 
 const signupSchema = z.object({
   displayName: z.string().min(1, "Please enter your name").max(80),
@@ -28,6 +30,12 @@ export interface ActionState {
 }
 
 export async function signup(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  // Throttle account creation per IP to blunt automated signups.
+  const ip = ipFromHeaders(headers());
+  if (!rateLimit(`signup:${ip}`, 5, 60 * 60 * 1000).ok) {
+    return { error: "Too many signups from this connection. Please try again later." };
+  }
+
   const parsed = signupSchema.safeParse({
     displayName: formData.get("displayName"),
     email: formData.get("email"),
@@ -98,6 +106,12 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
 }
 
 export async function login(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  // Throttle login attempts per IP to slow brute-force password guessing.
+  const ip = ipFromHeaders(headers());
+  if (!rateLimit(`login:${ip}`, 10, 15 * 60 * 1000).ok) {
+    return { error: "Too many attempts. Please wait a few minutes and try again." };
+  }
+
   try {
     await signIn("credentials", {
       email: String(formData.get("email") ?? "").toLowerCase(),
