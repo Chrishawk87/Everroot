@@ -8,6 +8,7 @@ import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { GROWTH_STAGES } from "@/lib/forest/types";
 import GrowthPanel from "./GrowthPanel";
 import InviteButton from "./InviteButton";
+import ShareClipButton, { isClipKind } from "./ShareClipButton";
 import { signOutAction } from "@/app/actions/forest";
 
 // three.js only runs in the browser — load the canvas without SSR.
@@ -199,6 +200,7 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
             <p className="mt-2 text-xs text-parchment/50">Epoch · {selected.epoch.replace(/_/g, " ")}</p>
           ) : null}
           {selected.kind === "PERSON" ? <InviteButton person={selected} /> : null}
+          {isClipKind(selected.kind) ? <ShareClipButton node={selected} /> : null}
           <button
             onClick={() => setSelected(null)}
             className="mt-3 text-xs text-parchment/50 hover:text-parchment"

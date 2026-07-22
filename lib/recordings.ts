@@ -38,8 +38,17 @@ export interface CreateRecordingInput {
 interface RecordingDelegate {
   create(args: { data: CreateRecordingInput }): Promise<RecordingRow>;
   findUnique(args: { where: { id: string } }): Promise<RecordingRow | null>;
+  findFirst(args: {
+    where: { nodeId: string };
+    orderBy?: { createdAt?: "asc" | "desc" };
+  }): Promise<RecordingRow | null>;
 }
 
 export function recordings(): RecordingDelegate {
   return (prisma as unknown as { recording: RecordingDelegate }).recording;
+}
+
+/** The most recent recording attached to a memory node, if any. */
+export function findRecordingForNode(nodeId: string): Promise<RecordingRow | null> {
+  return recordings().findFirst({ where: { nodeId }, orderBy: { createdAt: "desc" } });
 }

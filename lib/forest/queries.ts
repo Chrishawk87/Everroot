@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { stageForScore, type ForestGraph, type ForestNodeDTO, type ForestEdgeDTO } from "./types";
 import type { NodeKind } from "@prisma/client";
+import { findForwardLinks, findReverseLinks, linkedUserIdOf, isLinkedFamily } from "@/lib/family-links";
+import { findRecordingForNode } from "@/lib/recordings";
 
 const ALL_KINDS: NodeKind[] = [
   "SEED", "ROOT", "TRUNK", "BRANCH", "SUB_BRANCH", "LEAF", "FLOWER",
@@ -43,7 +45,7 @@ export async function getForest(userId: string): Promise<ForestGraph | null> {
     score: n.score,
     createdAt: n.createdAt.toISOString(),
     data: (n.data as Record<string, unknown> | null) ?? null,
-    linkedUserId: n.linkedUserId,
+    linkedUserId: linkedUserIdOf(n),
   }));
 
   const edgeDTOs: ForestEdgeDTO[] = edges.map((e) => ({
@@ -91,13 +93,9 @@ export async function getFamilyForest(userId: string): Promise<FamilyForest | nu
   if (!self) return null;
 
   // Forward links: PERSON nodes in MY forest bound to a real account.
-  const forward = await prisma.forestNode.findMany({
-    where: { userId, kind: "PERSON", linkedUserId: { not: null } },
-  });
+  const forward = await findForwardLinks(userId);
   // Reverse links: PERSON nodes in OTHER forests bound to ME.
-  const reverse = await prisma.forestNode.findMany({
-    where: { kind: "PERSON", linkedUserId: userId },
-  });
+  const reverse = await findReverseLinks(userId);
 
   // Relationship label per linked user (prefer the label on my side).
   const relById = new Map<string, string | null>();
@@ -126,4 +124,78 @@ export async function getFamilyForest(userId: string): Promise<FamilyForest | nu
   }
 
   return { self, members };
+}
+
+// A single memory turned into a shareable keepsake — the story, who told it,
+// when, and (if captured) its recorded voice.
+export interface MemoryClip {
+  nodeId: string;
+  kind: NodeKind;
+  title: string;
+  summary: string | null;
+  transcript: string | null;
+  question: string | null;
+  epoch: string | null;
+  createdAt: string;
+  tellerName: string;
+  tellerRole: string | null;
+  recordingId: string | null;
+  durationMs: number;
+  canView: boolean;
+}
+
+// Memory kinds that can become a shareable clip (everything that holds a story,
+// not the tree's scaffolding).
+const CLIP_KINDS = new Set<NodeKind>([
+  "LEAF", "FLOWER", "FRUIT", "MEMORY_MOMENT", "PHOTO", "MEMORY",
+]);
+
+/**
+ * Load one memory as a shareable clip. Returns null if the memory doesn't exist
+ * or isn't a shareable kind. Access is limited to the owner and linked family;
+ * when the viewer isn't allowed, `canView` is false and no content is exposed.
+ */
+export async function getMemoryClip(nodeId: string, viewerId: string): Promise<MemoryClip | null> {
+  const node = await prisma.forestNode.findUnique({ where: { id: nodeId } });
+  if (!node || !CLIP_KINDS.has(node.kind)) return null;
+
+  const allowed = await isLinkedFamily(viewerId, node.userId);
+  if (!allowed) {
+    return {
+      nodeId: node.id,
+      kind: node.kind,
+      title: "",
+      summary: null,
+      transcript: null,
+      question: null,
+      epoch: null,
+      createdAt: node.createdAt.toISOString(),
+      tellerName: "",
+      tellerRole: null,
+      recordingId: null,
+      durationMs: 0,
+      canView: false,
+    };
+  }
+
+  const [teller, rec] = await Promise.all([
+    prisma.profile.findUnique({ where: { userId: node.userId } }),
+    findRecordingForNode(node.id),
+  ]);
+
+  return {
+    nodeId: node.id,
+    kind: node.kind,
+    title: node.title,
+    summary: node.summary,
+    transcript: rec?.transcript ?? null,
+    question: rec?.question ?? null,
+    epoch: node.epoch,
+    createdAt: node.createdAt.toISOString(),
+    tellerName: teller?.displayName ?? "A family member",
+    tellerRole: teller?.familyPosition ?? null,
+    recordingId: rec?.id ?? null,
+    durationMs: rec?.durationMs ?? 0,
+    canView: true,
+  };
 }

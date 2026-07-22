@@ -2,6 +2,7 @@
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { invites, linkedUserIdOf } from "@/lib/family-links";
 
 // Human-friendly invite code — no ambiguous characters (0/O, 1/I/L).
 function generateCode(): string {
@@ -45,7 +46,7 @@ export async function createInvite(params: {
     });
     if (!node) return { ok: false, error: "That family member could not be found" };
     inviteeName = inviteeName ?? node.title;
-    if (node.linkedUserId) {
+    if (linkedUserIdOf(node)) {
       return { ok: false, error: `${node.title} has already joined the forest` };
     }
     const fam = await prisma.forestEdge.findFirst({
@@ -54,7 +55,7 @@ export async function createInvite(params: {
     relationship = relationship ?? fam?.label ?? null;
 
     // Reuse an existing unclaimed invite for this person.
-    const existing = await prisma.invite.findFirst({
+    const existing = await invites().findFirst({
       where: { inviterId, personNodeId, claimedById: null },
       orderBy: { createdAt: "desc" },
     });
@@ -64,12 +65,12 @@ export async function createInvite(params: {
   // Generate a unique code (retry on the rare collision).
   let code = generateCode();
   for (let i = 0; i < 5; i++) {
-    const clash = await prisma.invite.findUnique({ where: { code } });
+    const clash = await invites().findUnique({ where: { code } });
     if (!clash) break;
     code = generateCode();
   }
 
-  await prisma.invite.create({
+  await invites().create({
     data: { code, inviterId, personNodeId, relationship, inviteeName },
   });
 
@@ -88,15 +89,16 @@ export async function getInviteByCode(code: string): Promise<InvitePreview | nul
   const normalized = code.trim().toUpperCase();
   if (!normalized) return null;
 
-  const invite = await prisma.invite.findUnique({
-    where: { code: normalized },
-    include: { inviter: { include: { profile: true } } },
-  });
+  const invite = await invites().findUnique({ where: { code: normalized } });
   if (!invite || invite.claimedById) return null;
+
+  const inviterProfile = await prisma.profile.findUnique({
+    where: { userId: invite.inviterId },
+  });
 
   return {
     code: invite.code,
-    inviterName: invite.inviter.profile?.displayName ?? "A family member",
+    inviterName: inviterProfile?.displayName ?? "A family member",
     relationship: invite.relationship,
     inviteeName: invite.inviteeName,
   };

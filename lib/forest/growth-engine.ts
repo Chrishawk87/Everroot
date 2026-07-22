@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { NodeKind, EdgeKind, LifeEpoch, Prisma } from "@prisma/client";
+import { bindPersonToUser } from "@/lib/family-links";
 
 /**
  * TREE GROWTH ENGINE
@@ -352,18 +353,12 @@ export async function linkAccounts(params: {
   if (!inviterSideNodeId) {
     inviterSideNodeId = await ensurePerson(inviterId, inviteeName, relationship ?? undefined);
   }
-  await prisma.forestNode.update({
-    where: { id: inviterSideNodeId },
-    data: { linkedUserId: inviteeId },
-  });
+  await bindPersonToUser(inviterSideNodeId, inviteeId);
 
   // 2. Plant / find the inviter as a PERSON in the invitee's forest and bind it.
   const reciprocal = reciprocalRelationship(relationship, inviterProfile?.familyPosition);
   const inviteeSideNodeId = await ensurePerson(inviteeId, inviterName, reciprocal);
-  await prisma.forestNode.update({
-    where: { id: inviteeSideNodeId },
-    data: { linkedUserId: inviterId },
-  });
+  await bindPersonToUser(inviteeSideNodeId, inviterId);
 }
 
 /** Create the initial SEED for a brand-new account. */

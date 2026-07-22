@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { GROWTH_STAGES } from "@/lib/forest/types";
+import ShareClipButton, { isClipKind } from "./ShareClipButton";
 
 const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
   ssr: false,
@@ -65,7 +66,8 @@ export default function ReadOnlyForest({
           <p className="text-xs uppercase tracking-widest text-canopy-light">{selected.kind.replace(/_/g, " ")}</p>
           <h2 className="mt-1 font-serif text-xl text-parchment">{selected.title}</h2>
           {selected.summary ? <p className="mt-2 text-sm text-parchment/75">{selected.summary}</p> : null}
-          <button onClick={() => setSelected(null)} className="mt-3 text-xs text-parchment/50 hover:text-parchment">
+          {isClipKind(selected.kind) ? <ShareClipButton node={selected} /> : null}
+          <button onClick={() => setSelected(null)} className="mt-3 block text-xs text-parchment/50 hover:text-parchment">
             Close
           </button>
         </div>

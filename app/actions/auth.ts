@@ -6,6 +6,7 @@ import { AuthError } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
 import { plantSeed, linkAccounts } from "@/lib/forest/growth-engine";
+import { invites } from "@/lib/family-links";
 
 const signupSchema = z.object({
   displayName: z.string().min(1, "Please enter your name").max(80),
@@ -71,7 +72,7 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
   // inviter's family forest (both directions).
   if (inviteCode) {
     const code = inviteCode.trim().toUpperCase();
-    const invite = await prisma.invite.findUnique({ where: { code } });
+    const invite = await invites().findUnique({ where: { code } });
     if (invite && !invite.claimedById) {
       await linkAccounts({
         inviterId: invite.inviterId,
@@ -79,7 +80,7 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
         personNodeId: invite.personNodeId,
         relationship: invite.relationship,
       });
-      await prisma.invite.update({
+      await invites().update({
         where: { id: invite.id },
         data: { claimedById: user.id, claimedAt: new Date() },
       });
