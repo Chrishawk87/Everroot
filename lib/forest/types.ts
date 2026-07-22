@@ -12,6 +12,8 @@ export interface ForestNodeDTO {
   score: number;
   createdAt: string;
   data: Record<string, unknown> | null;
+  /** For PERSON nodes: the real account this person has claimed, if any. */
+  linkedUserId?: string | null;
 }
 
 export interface ForestEdgeDTO {

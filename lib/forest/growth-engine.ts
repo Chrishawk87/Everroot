@@ -282,6 +282,90 @@ export async function linkMention(
   });
 }
 
+// Common family relationships and their inverse, so when someone is invited as
+// my "Son" I show up in their forest as their "Father" (best-effort — falls
+// back to the inviter's own family role, then a plain "Family" label).
+const RECIPROCAL: Record<string, string> = {
+  mother: "Child",
+  father: "Child",
+  son: "Parent",
+  daughter: "Parent",
+  brother: "Sibling",
+  sister: "Sibling",
+  grandmother: "Grandchild",
+  grandfather: "Grandchild",
+  grandson: "Grandparent",
+  granddaughter: "Grandparent",
+  wife: "Husband",
+  husband: "Wife",
+  partner: "Partner",
+  aunt: "Niece/Nephew",
+  uncle: "Niece/Nephew",
+  cousin: "Cousin",
+  niece: "Aunt/Uncle",
+  nephew: "Aunt/Uncle",
+  friend: "Friend",
+};
+
+function reciprocalRelationship(relationship?: string | null, fallback?: string | null): string {
+  if (relationship) {
+    const key = relationship.trim().toLowerCase();
+    if (RECIPROCAL[key]) return RECIPROCAL[key];
+  }
+  return fallback?.trim() || "Family";
+}
+
+/**
+ * Link two real accounts into one family forest (both directions).
+ *
+ * - The inviter's placeholder PERSON node (if given) is bound to the invitee's
+ *   account via linkedUserId; otherwise one is planted for them.
+ * - A PERSON node representing the inviter is planted in the invitee's forest
+ *   and bound back to the inviter's account.
+ *
+ * Idempotent: re-linking an already-linked pair is a safe no-op.
+ */
+export async function linkAccounts(params: {
+  inviterId: string;
+  inviteeId: string;
+  personNodeId?: string | null;
+  relationship?: string | null;
+}): Promise<void> {
+  const { inviterId, inviteeId, personNodeId, relationship } = params;
+  if (inviterId === inviteeId) return;
+
+  const [inviterProfile, inviteeProfile] = await Promise.all([
+    prisma.profile.findUnique({ where: { userId: inviterId } }),
+    prisma.profile.findUnique({ where: { userId: inviteeId } }),
+  ]);
+  const inviterName = inviterProfile?.displayName ?? "Family";
+  const inviteeName = inviteeProfile?.displayName ?? "Family";
+
+  // 1. Bind the inviter-side PERSON node to the invitee's account.
+  let inviterSideNodeId = personNodeId ?? null;
+  if (inviterSideNodeId) {
+    const node = await prisma.forestNode.findFirst({
+      where: { id: inviterSideNodeId, userId: inviterId, kind: "PERSON" },
+    });
+    if (!node) inviterSideNodeId = null;
+  }
+  if (!inviterSideNodeId) {
+    inviterSideNodeId = await ensurePerson(inviterId, inviteeName, relationship ?? undefined);
+  }
+  await prisma.forestNode.update({
+    where: { id: inviterSideNodeId },
+    data: { linkedUserId: inviteeId },
+  });
+
+  // 2. Plant / find the inviter as a PERSON in the invitee's forest and bind it.
+  const reciprocal = reciprocalRelationship(relationship, inviterProfile?.familyPosition);
+  const inviteeSideNodeId = await ensurePerson(inviteeId, inviterName, reciprocal);
+  await prisma.forestNode.update({
+    where: { id: inviteeSideNodeId },
+    data: { linkedUserId: inviterId },
+  });
+}
+
 /** Create the initial SEED for a brand-new account. */
 export async function plantSeed(
   userId: string,

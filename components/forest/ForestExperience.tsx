@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { GROWTH_STAGES } from "@/lib/forest/types";
 import GrowthPanel from "./GrowthPanel";
+import InviteButton from "./InviteButton";
 import { signOutAction } from "@/app/actions/forest";
 
 // three.js only runs in the browser — load the canvas without SSR.
@@ -169,12 +170,20 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
         </div>
       ) : null}
 
-      {/* Sign out. */}
-      <form action={signOutAction} className="absolute right-5 top-5 font-sans">
-        <button className="rounded-full border border-parchment/20 bg-black/40 px-4 py-1.5 text-sm text-parchment/80 transition hover:border-parchment/50">
-          Sign out
-        </button>
-      </form>
+      {/* Top-right: family forest + sign out. */}
+      <div className="absolute right-5 top-5 flex items-center gap-2 font-sans">
+        <Link
+          href="/family"
+          className="rounded-full border border-canopy-light/40 bg-canopy/25 px-4 py-1.5 text-sm text-parchment/90 transition hover:border-canopy-light"
+        >
+          Family forest
+        </Link>
+        <form action={signOutAction}>
+          <button className="rounded-full border border-parchment/20 bg-black/40 px-4 py-1.5 text-sm text-parchment/80 transition hover:border-parchment/50">
+            Sign out
+          </button>
+        </form>
+      </div>
 
       {/* Selected node detail. */}
       {selected ? (
@@ -189,6 +198,7 @@ export default function ForestExperience({ graph }: { graph: ForestGraph }) {
           {selected.epoch ? (
             <p className="mt-2 text-xs text-parchment/50">Epoch · {selected.epoch.replace(/_/g, " ")}</p>
           ) : null}
+          {selected.kind === "PERSON" ? <InviteButton person={selected} /> : null}
           <button
             onClick={() => setSelected(null)}
             className="mt-3 text-xs text-parchment/50 hover:text-parchment"

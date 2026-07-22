@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { AuthError } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
-import { plantSeed } from "@/lib/forest/growth-engine";
+import { plantSeed, linkAccounts } from "@/lib/forest/growth-engine";
 
 const signupSchema = z.object({
   displayName: z.string().min(1, "Please enter your name").max(80),
@@ -19,6 +19,7 @@ const signupSchema = z.object({
       message: "Enter a valid birth year",
     }),
   familyPosition: z.string().max(60).optional(),
+  inviteCode: z.string().max(20).optional(),
 });
 
 export interface ActionState {
@@ -32,13 +33,14 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
     password: formData.get("password"),
     birthYear: formData.get("birthYear") || undefined,
     familyPosition: formData.get("familyPosition") || undefined,
+    inviteCode: formData.get("inviteCode") || undefined,
   });
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid details" };
   }
 
-  const { displayName, email, password, birthYear, familyPosition } = parsed.data;
+  const { displayName, email, password, birthYear, familyPosition, inviteCode } = parsed.data;
   const normalizedEmail = email.toLowerCase();
 
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
@@ -64,6 +66,25 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
 
   // Every new account begins as a seed in the forest.
   await plantSeed(user.id, displayName);
+
+  // If they arrived with an invite code, weave their new tree into the
+  // inviter's family forest (both directions).
+  if (inviteCode) {
+    const code = inviteCode.trim().toUpperCase();
+    const invite = await prisma.invite.findUnique({ where: { code } });
+    if (invite && !invite.claimedById) {
+      await linkAccounts({
+        inviterId: invite.inviterId,
+        inviteeId: user.id,
+        personNodeId: invite.personNodeId,
+        relationship: invite.relationship,
+      });
+      await prisma.invite.update({
+        where: { id: invite.id },
+        data: { claimedById: user.id, claimedAt: new Date() },
+      });
+    }
+  }
 
   // signIn throws a redirect on success, which propagates out of the action.
   await signIn("credentials", {

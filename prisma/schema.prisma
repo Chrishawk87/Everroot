@@ -28,7 +28,37 @@ model User {
   edges        ForestEdge[]
   recordings   Recording[]
 
+  // Invites this user has sent to bring family members into the forest.
+  sentInvites  Invite[]     @relation("SentInvites")
+  // PERSON nodes in OTHER users' forests that point at this account (the
+  // reverse side of a family link — lets us find who has linked to me).
+  linkedFrom   ForestNode[] @relation("PersonLink")
+
   @@map("users")
+}
+
+// A shareable invitation. The inviter generates a code tied to a placeholder
+// PERSON in their forest; when a family member signs up with the code, their
+// new tree links (both directions) to that person. No email needed — the code
+// travels however the family shares it (text, print, in person).
+model Invite {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  inviterId    String
+  // The placeholder PERSON node in the inviter's forest this invite fills in.
+  personNodeId String?
+  // How the invitee relates to the inviter, e.g. "Son", "Sister".
+  relationship String?
+  // Suggested display name, carried from the placeholder person.
+  inviteeName  String?
+  claimedById  String?
+  claimedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  inviter      User      @relation("SentInvites", fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([inviterId])
+  @@map("invites")
 }
 
 // A user's profile is the SEED metadata — who this tree belongs to.
@@ -99,10 +129,16 @@ model ForestNode {
   // of its nodes' scores; growth stage is derived from the total.
   score     Int      @default(0)
 
+  // If this is a PERSON node that has been claimed by a real account, this
+  // points at that account. Their tree becomes part of the family forest.
+  linkedUserId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The real account this PERSON node represents, if any.
+  linkedUser User?   @relation("PersonLink", fields: [linkedUserId], references: [id], onDelete: SetNull)
 
   // Graph edges where this node is the source / target.
   edgesFrom ForestEdge[] @relation("EdgeFrom")
@@ -112,6 +148,7 @@ model ForestNode {
 
   @@index([userId])
   @@index([userId, kind])
+  @@index([linkedUserId])
   @@map("forest_nodes")
 }
 
