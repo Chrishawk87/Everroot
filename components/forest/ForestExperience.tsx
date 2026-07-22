@@ -234,8 +234,18 @@ export default function ForestExperience({ graph, ownerId }: { graph: ForestGrap
             <span className="block text-xs text-white/80">Answer a few questions aloud — watch your tree grow</span>
           </span>
         </Link>
-        <div className="mb-3">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
+          <Link
+            href={`/book/${ownerId}`}
+            className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/50 px-4 py-1.5 text-sm text-parchment/85 transition hover:border-parchment/60 hover:text-parchment"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+            Book of the Tree
+          </Link>
         </div>
         <div className="rounded-2xl border border-parchment/15 bg-black/70 backdrop-blur">
           <button

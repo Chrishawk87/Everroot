@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { stageForScore, type ForestGraph, type ForestNodeDTO, type ForestEdgeDTO } from "./types";
-import type { NodeKind } from "@prisma/client";
+import { GROWTH_STAGES, stageForScore, type ForestGraph, type ForestNodeDTO, type ForestEdgeDTO } from "./types";
+import type { NodeKind, LifeEpoch } from "@prisma/client";
 import { findForwardLinks, findReverseLinks, linkedUserIdOf, isLinkedFamily } from "@/lib/family-links";
-import { findRecordingForNode, listRecordingsForUser } from "@/lib/recordings";
+import { findRecordingForNode, listRecordingsForUser, type RecordingMeta } from "@/lib/recordings";
 
 const ALL_KINDS: NodeKind[] = [
   "SEED", "ROOT", "TRUNK", "BRANCH", "SUB_BRANCH", "LEAF", "FLOWER",
@@ -277,5 +277,153 @@ export async function getStoryFeed(ownerId: string, viewerId: string): Promise<S
     episodes,
     totalDurationMs,
     canListen: true,
+  };
+}
+
+// The seven life epochs, in the order a life is lived, with a chapter title +
+// subtitle for the printed book.
+const EPOCH_META: { epoch: LifeEpoch; label: string; subtitle: string }[] = [
+  { epoch: "ROOTS", label: "Roots", subtitle: "The early years" },
+  { epoch: "FIRST_STEPS", label: "First Steps", subtitle: "Coming of age" },
+  { epoch: "CROSSROADS", label: "Crossroads", subtitle: "Turning points" },
+  { epoch: "ANCHORS", label: "Anchors", subtitle: "Love, family, and home" },
+  { epoch: "STORMS", label: "Storms", subtitle: "Trials weathered" },
+  { epoch: "HARVEST", label: "Harvest", subtitle: "The fruits of a life" },
+  { epoch: "HORIZONS", label: "Horizons", subtitle: "Looking onward" },
+];
+
+// One recorded memory, written up as a chapter in the book.
+export interface BookChapter {
+  nodeId: string;
+  title: string;
+  question: string | null;
+  body: string | null;
+  date: string;
+}
+
+// A run of chapters that belong to one life epoch.
+export interface BookSection {
+  key: string;
+  label: string;
+  subtitle: string | null;
+  chapters: BookChapter[];
+}
+
+export interface BookPerson {
+  name: string;
+  relationship: string | null;
+}
+
+// A person's whole life, laid out as a printable keepsake book.
+export interface Book {
+  ownerId: string;
+  displayName: string;
+  birthYear: number | null;
+  familyPosition: string | null;
+  stageLabel: string;
+  legacyScore: number;
+  memoryCount: number;
+  sections: BookSection[];
+  family: BookPerson[];
+  canView: boolean;
+}
+
+// Memory kinds that become chapters (mirrors the clip/feed set).
+const BOOK_KINDS = new Set<NodeKind>([
+  "LEAF", "FLOWER", "FRUIT", "MEMORY_MOMENT", "PHOTO", "MEMORY",
+]);
+
+/**
+ * Assemble a person's whole story into a printable book: their memories written
+ * up as chapters, grouped by life epoch in the order a life is lived, plus the
+ * family around them. Access mirrors the story feed — owner + linked family.
+ */
+export async function getBook(ownerId: string, viewerId: string): Promise<Book | null> {
+  const profile = await prisma.profile.findUnique({ where: { userId: ownerId } });
+  if (!profile) return null;
+
+  const base: Book = {
+    ownerId,
+    displayName: profile.displayName,
+    birthYear: profile.birthYear,
+    familyPosition: profile.familyPosition,
+    stageLabel: "",
+    legacyScore: 0,
+    memoryCount: 0,
+    sections: [],
+    family: [],
+    canView: false,
+  };
+
+  const allowed = await isLinkedFamily(viewerId, ownerId);
+  if (!allowed) return base;
+
+  const [recs, nodes, familyEdges] = await Promise.all([
+    listRecordingsForUser(ownerId),
+    prisma.forestNode.findMany({ where: { userId: ownerId }, orderBy: { createdAt: "asc" } }),
+    prisma.forestEdge.findMany({ where: { userId: ownerId, kind: "FAMILY" } }),
+  ]);
+
+  // Most recent recording per node — its transcript becomes the chapter body.
+  const recByNode = new Map<string, RecordingMeta>();
+  for (const r of recs) if (!recByNode.has(r.nodeId)) recByNode.set(r.nodeId, r);
+
+  const relByNode = new Map(familyEdges.map((e) => [e.toNodeId, e.label]));
+
+  let legacyScore = 0;
+  const family: BookPerson[] = [];
+  const byEpoch = new Map<string, BookChapter[]>();
+
+  for (const n of nodes) {
+    legacyScore += n.score;
+
+    if (n.kind === "PERSON") {
+      family.push({ name: n.title, relationship: relByNode.get(n.id) ?? null });
+      continue;
+    }
+    if (!BOOK_KINDS.has(n.kind)) continue;
+
+    const rec = recByNode.get(n.id);
+    const transcript = rec?.transcript?.trim();
+    const body = transcript && transcript.length > 0 ? transcript : n.summary;
+    const chapter: BookChapter = {
+      nodeId: n.id,
+      title: n.title,
+      question: rec?.question ?? null,
+      body: body ?? null,
+      date: n.createdAt.toISOString(),
+    };
+    const key = n.epoch ?? "_OTHER";
+    const list = byEpoch.get(key);
+    if (list) list.push(chapter);
+    else byEpoch.set(key, [chapter]);
+  }
+
+  const sections: BookSection[] = [];
+  let memoryCount = 0;
+  for (const meta of EPOCH_META) {
+    const chapters = byEpoch.get(meta.epoch);
+    if (chapters && chapters.length) {
+      sections.push({ key: meta.epoch, label: meta.label, subtitle: meta.subtitle, chapters });
+      memoryCount += chapters.length;
+    }
+  }
+  const other = byEpoch.get("_OTHER");
+  if (other && other.length) {
+    sections.push({ key: "_OTHER", label: "More Memories", subtitle: null, chapters: other });
+    memoryCount += other.length;
+  }
+
+  const stageLabel =
+    GROWTH_STAGES.find((s) => s.stage === stageForScore(legacyScore))?.label ?? "Seed";
+
+  return {
+    ...base,
+    stageLabel,
+    legacyScore,
+    memoryCount,
+    sections,
+    family,
+    canView: true,
   };
 }

@@ -54,8 +54,18 @@ export default function ReadOnlyForest({
         <p className="mt-2 text-xs text-parchment/40">
           {memoryCount} memories · {graph.counts.PERSON} family · {graph.counts.ROOT} roots
         </p>
-        <div className="pointer-events-auto mt-3">
+        <div className="pointer-events-auto mt-3 flex flex-wrap items-center gap-2">
           <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} />
+          <Link
+            href={`/book/${ownerId}`}
+            className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/50 px-4 py-1.5 text-sm text-parchment/85 transition hover:border-parchment/60 hover:text-parchment"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+            Book of the Tree
+          </Link>
         </div>
       </div>
 
