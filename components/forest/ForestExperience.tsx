@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -63,6 +64,14 @@ export default function ForestExperience({
   const [focusId, setFocusId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showIntro, setShowIntro] = useState(false);
+  const [greeting, setGreeting] = useState("Welcome back");
+  const [toolsOpen, setToolsOpen] = useState(false);
+
+  // Time-of-day greeting, resolved after mount to avoid a hydration mismatch.
+  useEffect(() => {
+    const h = new Date().getHours();
+    setGreeting(h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening");
+  }, []);
 
   // Play the opening automatically the first time this browser sees the forest.
   useEffect(() => {
@@ -127,8 +136,40 @@ export default function ForestExperience({
     .filter((n) => n.kind === "PERSON" && n.linkedUserId)
     .map((n) => ({ userId: n.linkedUserId as string, name: n.title }));
 
+  // Headline stats shown in the dashboard greeting card.
+  const storiesCount = graph.counts.LEAF + graph.counts.MEMORY_MOMENT;
+  const stats: { label: string; value: number }[] = [
+    { label: "Stories", value: storiesCount },
+    { label: "Memories", value: memoryCount },
+    { label: "Family", value: graph.counts.PERSON },
+    { label: "Trees", value: familyOptions.length + 1 },
+  ];
+
+  const initials = graph.profile.displayName
+    .split(/\s+/)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  const firstName = graph.profile.displayName.split(/\s+/)[0];
+  const role = graph.profile.familyPosition || "Legacy Keeper";
+
+  const navItems: { label: string; href?: string; active?: boolean; icon: ReactNode }[] = [
+    { label: "My Forest", href: "/forest", active: true, icon: ICONS.tree },
+    { label: "Timeline", icon: ICONS.timeline },
+    { label: "People", href: "/family", icon: ICONS.people },
+    { label: "Places", icon: ICONS.pin },
+    { label: "Search", icon: ICONS.search },
+    { label: "Daily Prompt", href: "/interview", icon: ICONS.mic },
+    { label: "Time Capsules", href: "/interview", icon: ICONS.capsule },
+    { label: "Settings", icon: ICONS.settings },
+  ];
+
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div className="relative h-screen w-screen overflow-hidden font-sans">
+      {/* Hero 3D forest — full-bleed behind the dashboard chrome. */}
       <div className="absolute inset-0">
         <ForestCanvas
           graph={graph}
@@ -139,9 +180,13 @@ export default function ForestExperience({
         />
       </div>
 
+      {/* Soft scrims keep the floating panels legible over a bright canopy. */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-72 bg-gradient-to-r from-black/50 to-transparent" />
+      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-96 bg-gradient-to-l from-black/40 to-transparent" />
+
       {/* Memorial banner. */}
       {graph.isMemorial ? (
-        <div className="pointer-events-none absolute left-1/2 top-6 z-10 -translate-x-1/2 text-center font-serif [text-shadow:0_1px_8px_rgba(0,0,0,0.9)]">
+        <div className="pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 text-center font-serif [text-shadow:0_1px_8px_rgba(0,0,0,0.9)]">
           <p className="text-xs uppercase tracking-[0.3em] text-parchment/60">In loving memory</p>
           <p className="text-lg text-parchment/90">{graph.profile.displayName}</p>
           {graph.memorialNote ? (
@@ -150,48 +195,99 @@ export default function ForestExperience({
         </div>
       ) : null}
 
-      {/* Top-left: whose forest + growth stage. */}
-      <div className="pointer-events-none absolute left-5 top-5 max-w-xs font-sans [text-shadow:0_1px_8px_rgba(0,0,0,0.9)]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/everroot-logo-transparent.png"
-          alt="EverRoot"
-          className="mb-2 h-14 w-auto drop-shadow-[0_2px_10px_rgba(0,0,0,0.6)]"
-        />
-        <h1 className="font-serif text-2xl text-parchment">
-          {graph.profile.displayName}
-          {graph.profile.familyPosition ? (
-            <span className="text-parchment/50"> · {graph.profile.familyPosition}</span>
-          ) : null}
-        </h1>
-        <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-black/40 px-3 py-1 text-sm">
-          <span className="text-fruit">{stageMeta?.label ?? graph.stage}</span>
-          <span className="text-parchment/40">·</span>
-          <span className="text-parchment/80">Legacy {graph.legacyScore}</span>
+      {/* ---------------- LEFT SIDEBAR ---------------- */}
+      <aside className="pointer-events-auto absolute left-0 top-0 z-20 flex h-full w-60 flex-col border-r border-parchment/10 bg-black/55 backdrop-blur-md">
+        <div className="px-5 pt-5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/everroot-logo-transparent.png" alt="EverRoot" className="h-11 w-auto" />
+          <p className="mt-1 text-[11px] tracking-wide text-parchment/45">Grow Your Legacy. Share Forever.</p>
         </div>
-        {next ? (
-          <p className="mt-1 text-xs text-parchment/50">
-            {next.min - graph.legacyScore > 0
-              ? `${next.min - graph.legacyScore} more to reach ${next.label}`
-              : `Ready to become ${next.label}`}
+
+        <nav className="mt-5 flex-1 space-y-0.5 overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {navItems.map((item) => (
+            <NavItem key={item.label} {...item} />
+          ))}
+        </nav>
+
+        {/* Today's Prompt. */}
+        <div className="mx-3 mb-3 rounded-xl border border-canopy-light/25 bg-canopy/15 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-canopy-light">
+            {ICONS.leaf} Today&apos;s Prompt
           </p>
-        ) : (
-          <p className="mt-1 text-xs text-parchment/50">Fully grown — an ancient legacy</p>
-        )}
-        <p className="mt-2 text-xs text-parchment/40">
-          {memoryCount} memories · {graph.counts.PERSON} family · {graph.counts.ROOT} roots
-        </p>
-        <button
-          onClick={() => setShowIntro(true)}
-          className="pointer-events-auto mt-2 text-xs text-parchment/40 underline-offset-2 transition hover:text-parchment/80 hover:underline"
-        >
-          ▶ Replay opening
-        </button>
+          <p className="mt-1.5 text-sm leading-snug text-parchment/85">
+            What is a lesson life taught you the hard way?
+          </p>
+          <Link
+            href="/interview"
+            className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-canopy to-canopy-light py-2 text-sm font-medium text-white shadow transition hover:brightness-110"
+          >
+            {ICONS.mic} Record Memory
+          </Link>
+        </div>
+
+        {/* Profile + sign out. */}
+        <div className="flex items-center gap-3 border-t border-parchment/10 px-4 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-canopy/40 font-serif text-sm text-parchment">
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm text-parchment">{graph.profile.displayName}</p>
+            <p className="truncate text-[11px] text-parchment/45">{role}</p>
+          </div>
+          <form action={signOutAction}>
+            <button title="Sign out" className="text-parchment/40 transition hover:text-parchment/80">
+              {ICONS.signout}
+            </button>
+          </form>
+        </div>
+      </aside>
+
+      {/* ---------------- TOP-RIGHT: greeting + stats ---------------- */}
+      <div className="pointer-events-auto absolute right-5 top-5 z-20 w-80 max-w-[calc(100vw-16rem)]">
+        <div className="rounded-2xl border border-parchment/12 bg-black/55 p-4 backdrop-blur-md">
+          <div className="flex items-start gap-2">
+            <span className="mt-0.5 text-fruit">{ICONS.sun}</span>
+            <div className="min-w-0 flex-1">
+              <p className="font-serif text-lg leading-tight text-parchment">
+                {greeting}, {firstName}
+              </p>
+              <p className="text-xs text-parchment/55">Your forest is growing beautifully.</p>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-4 gap-2">
+            {stats.map((s) => (
+              <div key={s.label} className="rounded-lg bg-white/[0.06] px-1 py-2 text-center">
+                <p className="font-serif text-lg leading-none text-parchment">{s.value}</p>
+                <p className="mt-1 text-[10px] uppercase tracking-wide text-parchment/50">{s.label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2 text-xs">
+            <span className="text-fruit">{stageMeta?.label ?? graph.stage}</span>
+            <span className="text-parchment/30">·</span>
+            <span className="text-parchment/70">Legacy {graph.legacyScore}</span>
+            <button
+              onClick={() => setShowIntro(true)}
+              className="ml-auto text-parchment/40 transition hover:text-parchment/80"
+            >
+              ▶ Replay
+            </button>
+          </div>
+          {next ? (
+            <p className="mt-1.5 text-[11px] text-parchment/45">
+              {next.min - graph.legacyScore > 0
+                ? `${next.min - graph.legacyScore} more to reach ${next.label}`
+                : `Ready to become ${next.label}`}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-[11px] text-parchment/45">Fully grown — an ancient legacy</p>
+          )}
+        </div>
       </div>
 
       {/* Growth toast — announces what just grew. */}
       {toast ? (
-        <div className="pointer-events-none absolute left-1/2 top-6 z-10 -translate-x-1/2 animate-[fadeIn_0.4s_ease-out] font-sans">
+        <div className="pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 animate-[fadeIn_0.4s_ease-out]">
           <div className="flex items-center gap-2 rounded-full border border-fruit/40 bg-black/80 px-5 py-2 text-sm text-parchment shadow-lg backdrop-blur">
             <span className="text-fruit">✦</span>
             <span>{toast}</span>
@@ -199,24 +295,9 @@ export default function ForestExperience({
         </div>
       ) : null}
 
-      {/* Top-right: family forest + sign out. */}
-      <div className="absolute right-5 top-5 flex items-center gap-2 font-sans">
-        <Link
-          href="/family"
-          className="rounded-full border border-canopy-light/40 bg-canopy/25 px-4 py-1.5 text-sm text-parchment/90 transition hover:border-canopy-light"
-        >
-          Family forest
-        </Link>
-        <form action={signOutAction}>
-          <button className="rounded-full border border-parchment/20 bg-black/40 px-4 py-1.5 text-sm text-parchment/80 transition hover:border-parchment/50">
-            Sign out
-          </button>
-        </form>
-      </div>
-
       {/* Selected node detail. */}
       {selected ? (
-        <div className="absolute bottom-5 left-5 max-w-sm rounded-2xl border border-parchment/15 bg-black/70 p-5 font-sans backdrop-blur">
+        <div className="absolute bottom-5 left-64 z-20 max-w-sm rounded-2xl border border-parchment/15 bg-black/70 p-5 backdrop-blur">
           <p className="text-xs uppercase tracking-widest text-canopy-light">
             {selected.kind.replace(/_/g, " ")}
           </p>
@@ -243,60 +324,187 @@ export default function ForestExperience({
         <ForestIntro displayName={graph.profile.displayName} onComplete={completeIntro} />
       ) : null}
 
-      {/* Growth panel. Capped + scrollable so it never buries the forest on a phone. */}
-      <div className="absolute bottom-5 right-5 max-h-[70vh] w-80 max-w-[90vw] overflow-y-auto font-sans [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {/* Primary action — the voice life interview. */}
-        <Link
-          href="/interview"
-          className="mb-3 flex items-center gap-3 rounded-2xl border border-fruit/40 bg-gradient-to-r from-canopy/80 to-canopy-light/70 px-5 py-3.5 text-left shadow-lg transition hover:border-fruit/70 hover:brightness-110"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-            <rect x="9" y="2" width="6" height="12" rx="3" />
-            <path d="M5 10a7 7 0 0 0 14 0" />
-            <line x1="12" y1="17" x2="12" y2="21" />
-            <line x1="8" y1="21" x2="16" y2="21" />
-          </svg>
-          <span>
-            <span className="block font-serif text-lg leading-tight text-white">Record your story</span>
-            <span className="block text-xs text-white/80">Answer a few questions aloud — watch your tree grow</span>
-          </span>
-        </Link>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
-          <Link
-            href={`/book/${ownerId}`}
-            className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/50 px-4 py-1.5 text-sm text-parchment/85 transition hover:border-parchment/60 hover:text-parchment"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
-            Book of the Tree
-          </Link>
-          <CapsulePanel ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
-          <GuardianPanel
-            ownerId={ownerId}
-            isMemorial={graph.isMemorial}
-            memorialNote={graph.memorialNote}
-            currentGuardianId={guardianId}
-            family={familyOptions}
-          />
-        </div>
-        <div className="rounded-2xl border border-parchment/15 bg-black/70 backdrop-blur">
-          <button
-            onClick={() => setPanelOpen((o) => !o)}
-            className="flex w-full items-center justify-between px-5 py-3 text-left"
-          >
-            <span className="font-serif text-lg text-parchment">Grow your forest</span>
-            <span className="text-parchment/50">{panelOpen ? "–" : "+"}</span>
-          </button>
-          {panelOpen ? (
-            <div className="border-t border-parchment/10 p-5 pt-4">
-              <GrowthPanel onGrew={handleGrew} />
+      {/* ---------------- BOTTOM-RIGHT: tools ---------------- */}
+      <div className="absolute bottom-5 right-5 z-20 flex flex-col items-end gap-3">
+        {toolsOpen ? (
+          <div className="max-h-[70vh] w-80 max-w-[90vw] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
+              <Link
+                href={`/book/${ownerId}`}
+                className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/50 px-4 py-1.5 text-sm text-parchment/85 transition hover:border-parchment/60 hover:text-parchment"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+                Book of the Tree
+              </Link>
+              <CapsulePanel ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
+              <GuardianPanel
+                ownerId={ownerId}
+                isMemorial={graph.isMemorial}
+                memorialNote={graph.memorialNote}
+                currentGuardianId={guardianId}
+                family={familyOptions}
+              />
             </div>
-          ) : null}
-        </div>
+            <div className="rounded-2xl border border-parchment/15 bg-black/70 backdrop-blur">
+              <button
+                onClick={() => setPanelOpen((o) => !o)}
+                className="flex w-full items-center justify-between px-5 py-3 text-left"
+              >
+                <span className="font-serif text-lg text-parchment">Grow your forest</span>
+                <span className="text-parchment/50">{panelOpen ? "–" : "+"}</span>
+              </button>
+              {panelOpen ? (
+                <div className="border-t border-parchment/10 p-5 pt-4">
+                  <GrowthPanel onGrew={handleGrew} />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        <button
+          onClick={() => setToolsOpen((o) => !o)}
+          className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/60 px-4 py-2 text-sm text-parchment/85 shadow-lg backdrop-blur transition hover:border-parchment/60 hover:text-parchment"
+        >
+          {ICONS.tools}
+          {toolsOpen ? "Close tools" : "Tools"}
+        </button>
       </div>
     </div>
   );
 }
+
+/* ---------------- Sidebar nav item ---------------- */
+
+function NavItem({
+  label,
+  href,
+  active,
+  icon,
+}: {
+  label: string;
+  href?: string;
+  active?: boolean;
+  icon: ReactNode;
+}) {
+  const base = "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition";
+  if (!href) {
+    return (
+      <span className={`${base} cursor-default text-parchment/30`} title="Coming soon">
+        <span className="shrink-0 opacity-70">{icon}</span>
+        <span>{label}</span>
+        <span className="ml-auto text-[9px] uppercase tracking-wide text-parchment/25">soon</span>
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className={`${base} ${
+        active
+          ? "bg-canopy/30 text-parchment"
+          : "text-parchment/70 hover:bg-white/5 hover:text-parchment"
+      }`}
+    >
+      <span className={`shrink-0 ${active ? "text-canopy-light" : ""}`}>{icon}</span>
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+/* ---------------- Inline icon set ---------------- */
+
+function icon(children: ReactNode) {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const ICONS = {
+  tree: icon(
+    <>
+      <path d="M12 22v-6" />
+      <path d="M9 16a4 4 0 0 1-1-7.7A4.5 4.5 0 1 1 16 8a4 4 0 0 1-1 8Z" />
+    </>,
+  ),
+  timeline: icon(
+    <>
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <circle cx="8" cy="12" r="1.7" />
+      <circle cx="16" cy="12" r="1.7" />
+    </>,
+  ),
+  people: icon(
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3.5 20a5.5 5.5 0 0 1 11 0" />
+      <path d="M16 5.5a3 3 0 0 1 0 5.5" />
+      <path d="M17.5 20a5.5 5.5 0 0 0-3-4.9" />
+    </>,
+  ),
+  pin: icon(
+    <>
+      <path d="M12 21s-6-5.3-6-10a6 6 0 1 1 12 0c0 4.7-6 10-6 10Z" />
+      <circle cx="12" cy="11" r="2" />
+    </>,
+  ),
+  search: icon(
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.5" y2="16.5" />
+    </>,
+  ),
+  mic: icon(
+    <>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10a7 7 0 0 0 14 0" />
+      <line x1="12" y1="17" x2="12" y2="21" />
+    </>,
+  ),
+  capsule: icon(
+    <>
+      <rect x="3" y="8" width="18" height="12" rx="2" />
+      <path d="M3 8l3-4h12l3 4" />
+      <line x1="12" y1="12" x2="12" y2="16" />
+    </>,
+  ),
+  settings: icon(
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+    </>,
+  ),
+  leaf: icon(<path d="M4 20c8 0 16-4 16-16C8 4 4 12 4 20Zm0 0c2-6 6-8 10-9" />),
+  sun: icon(
+    <>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" />
+    </>,
+  ),
+  signout: icon(
+    <>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </>,
+  ),
+  tools: icon(
+    <>
+      <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.1-.6-.6-2.1Z" />
+    </>,
+  ),
+};
