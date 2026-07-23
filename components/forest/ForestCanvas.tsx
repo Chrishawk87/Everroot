@@ -427,7 +427,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   const ambientRef = useRef<THREE.AmbientLight>(null);
   const hemiRef = useRef<THREE.HemisphereLight>(null);
   const dirRef = useRef<THREE.DirectionalLight>(null);
-  const skyRef = useRef<THREE.Mesh>(null);
+  const skyRef = useRef<React.ElementRef<typeof Sky>>(null);
 
   return (
     <Canvas
@@ -1067,7 +1067,7 @@ function SceneClock({
   ambientRef: React.RefObject<THREE.AmbientLight>;
   hemiRef: React.RefObject<THREE.HemisphereLight>;
   dirRef: React.RefObject<THREE.DirectionalLight>;
-  skyRef: React.RefObject<THREE.Mesh>;
+  skyRef: React.RefObject<React.ElementRef<typeof Sky>>;
 }) {
   const { scene } = useThree();
   const lerp = THREE.MathUtils.lerp;
