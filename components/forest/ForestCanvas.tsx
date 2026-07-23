@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Sky, Environment, Lightformer, Clouds, Cloud } from "@react-three/drei";
+import { OrbitControls, Html, Sky, Environment, Lightformer } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette, SMAA } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { ForestGraph, ForestNodeDTO, GrowthStage } from "@/lib/forest/types";
@@ -377,10 +377,11 @@ function loadColorTexture(url: string, repeatX: number, repeatY: number): THREE.
   return t;
 }
 
-// A soft, feathered puff used as the billboard sprite for drei <Cloud>. Built
-// as a canvas → data URL so the clouds carry no external asset dependency
-// (drei's default cloud texture is a remote CDN file we don't want to rely on).
-function makeCloudDataUrl(): string {
+// A soft, feathered puff texture for the drifting sky clouds. Built as an
+// in-memory CanvasTexture so the clouds carry NO external/remote asset and never
+// go through a Suspense-throwing loader. (drei's <Clouds> used useTexture, whose
+// loader could hang in production and hide the entire scene — so we roll our own.)
+function makeCloudTexture(): THREE.CanvasTexture {
   const s = 128;
   const c = document.createElement("canvas");
   c.width = s;
@@ -406,7 +407,9 @@ function makeCloudDataUrl(): string {
     x.arc(px, py, r, 0, Math.PI * 2);
     x.fill();
   }
-  return c.toDataURL("image/png");
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 // A soft round glow used as the sprite for the drifting lantern lights, so they
@@ -429,16 +432,48 @@ function makeGlowSprite(): THREE.CanvasTexture {
   return tex;
 }
 
-// A gentle band of clouds drifting high above the forest. Kept far up and out so
-// they never intersect the tree, and slow-moving so the sky feels alive but calm.
+// A gentle band of clouds drifting high above the forest, rendered as a handful
+// of soft camera-facing billboards. Kept far up so they never touch the tree, and
+// slow-moving so the sky feels alive but calm. No texture loader is involved, so
+// this can never block the scene from appearing.
+const CLOUD_DEFS = [
+  { x: -22, y: 24, z: -20, w: 30, h: 15, opacity: 0.5, speed: 0.5, tint: "#f4f6ff" },
+  { x: 18, y: 27, z: -26, w: 26, h: 13, opacity: 0.45, speed: 0.36, tint: "#eef2ff" },
+  { x: 6, y: 30, z: 24, w: 24, h: 12, opacity: 0.4, speed: 0.44, tint: "#ffffff" },
+  { x: -14, y: 33, z: 12, w: 28, h: 14, opacity: 0.32, speed: 0.28, tint: "#f4f6ff" },
+];
+
 function SkyClouds() {
-  const texUrl = useMemo(makeCloudDataUrl, []);
+  const tex = useMemo(makeCloudTexture, []);
+  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  useFrame((state, delta) => {
+    for (let i = 0; i < refs.current.length; i++) {
+      const m = refs.current[i];
+      if (!m) continue;
+      // Drift slowly across the sky, wrapping around when off the far edge.
+      m.position.x += CLOUD_DEFS[i].speed * delta;
+      if (m.position.x > 44) m.position.x = -44;
+      // Face the camera so the soft puff reads from any orbit angle.
+      m.quaternion.copy(state.camera.quaternion);
+    }
+  });
   return (
-    <Clouds texture={texUrl} limit={200} position={[0, 26, 0]}>
-      <Cloud seed={1} segments={26} bounds={[26, 3, 18]} volume={9} color="#f4f6ff" opacity={0.55} speed={0.14} growth={5} position={[-14, 0, -18]} />
-      <Cloud seed={7} segments={22} bounds={[22, 3, 16]} volume={8} color="#eef2ff" opacity={0.5} speed={0.1} growth={5} position={[16, 3, -24]} />
-      <Cloud seed={13} segments={20} bounds={[20, 2.5, 14]} volume={7} color="#ffffff" opacity={0.45} speed={0.12} growth={4} position={[4, 6, 22]} />
-    </Clouds>
+    <group>
+      {CLOUD_DEFS.map((c, i) => (
+        <mesh key={i} ref={(el) => { refs.current[i] = el; }} position={[c.x, c.y, c.z]}>
+          <planeGeometry args={[c.w, c.h]} />
+          <meshBasicMaterial
+            map={tex}
+            color={c.tint}
+            transparent
+            opacity={c.opacity}
+            depthWrite={false}
+            fog={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
