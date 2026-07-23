@@ -44,15 +44,18 @@ interface Atmosphere {
   motes: { color: string; opacity: number };
 }
 
+// The resting daytime look is a warm golden hour: a low sun sitting behind the
+// tree, an amber horizon, and rich (not washed-out) greens — the palette of the
+// concept art. Night, dawn and deep-sunset keyframes still cycle around it.
 const DAY_ATMOSPHERE: Atmosphere = {
-  sun: SUN_POSITION,
-  background: "#cfe3d6",
-  sky: { turbidity: 6, rayleigh: 1.4, mieCoefficient: 0.006, mieDirectionalG: 0.85 },
-  fog: { color: "#d7e6d2", near: 48, far: 150 },
-  ambient: 0.4,
-  hemi: { sky: "#e6f2e6", ground: "#4a5b34", intensity: 0.65 },
-  dir: { color: "#fff1d6", intensity: 2.1 },
-  motes: { color: "#fff2c8", opacity: 0.35 },
+  sun: [-26, 12, -20],
+  background: "#e7cd97",
+  sky: { turbidity: 8, rayleigh: 2.3, mieCoefficient: 0.021, mieDirectionalG: 0.9 },
+  fog: { color: "#e6d2a0", near: 44, far: 140 },
+  ambient: 0.32,
+  hemi: { sky: "#f4e2b4", ground: "#43502e", intensity: 0.5 },
+  dir: { color: "#ffd79a", intensity: 1.85 },
+  motes: { color: "#ffe6b0", opacity: 0.4 },
 };
 
 const MEMORIAL_ATMOSPHERE: Atmosphere = {
@@ -566,7 +569,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       dpr={[1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.92 }}
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={[atmo.background]} />
@@ -590,9 +593,13 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         shadow-camera-top={12}
         shadow-camera-bottom={-4}
       />
-      {/* Soft warm rim light from behind: lifts the tree's silhouette off the
-          sky for depth. No shadow — purely cinematic separation. */}
-      <directionalLight position={[-8, 6, -9]} intensity={0.5} color="#ffd9a8" />
+      {/* Strong warm rim light from low behind the tree: the golden-hour sun
+          rakes through the canopy and lights the silhouette from the back,
+          just like the concept. No shadow — purely cinematic separation. */}
+      <directionalLight position={[-14, 4, -16]} intensity={1.5} color="#ffb867" />
+      {/* Low sun-glow point tucked behind the trunk fork so light appears to
+          burst through the split of the tree toward the viewer. */}
+      <pointLight position={[0, 2.4, -3]} intensity={2.2} distance={22} decay={1.6} color="#ffcf7a" />
 
       {/* The day-cycle drives all of the above; memorial forests hold at dusk. */}
       <SceneClock
@@ -639,6 +646,16 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {/* Decorative full canopy. */}
       {crown.count > 0 ? (
         <Canopy center={crownCenter} radius={crown.r} count={crown.count} leafTex={leafTex} />
+      ) : null}
+
+      {/* Golden twinkling memory-lights scattered through the crown. */}
+      {crown.r > 0 ? (
+        <CanopySparkles
+          center={crownCenter}
+          radius={crown.r}
+          count={Math.min(Math.round(crown.count * 0.22), 360)}
+          nightRef={nightRef}
+        />
       ) : null}
 
       {/* Memory graph: glowing threads between memories and the people in them. */}
@@ -1116,6 +1133,94 @@ function CanopyShadow({ tex, center, radius }: { tex: THREE.CanvasTexture; cente
       <planeGeometry args={[radius * 3.2, radius * 3.2]} />
       <meshBasicMaterial map={tex} transparent depthWrite={false} opacity={0.85} />
     </mesh>
+  );
+}
+
+// The signature of the concept art: hundreds of warm golden lights scattered
+// through the crown, each softly twinkling as if memories were catching the
+// last of the sun. Bright peaks cross the bloom threshold and flare, so the
+// canopy shimmers. Brightens further after dark.
+function CanopySparkles({
+  center,
+  radius,
+  count,
+  nightRef,
+}: {
+  center: Vec3;
+  radius: number;
+  count: number;
+  nightRef?: React.MutableRefObject<number>;
+}) {
+  const matRef = useRef<THREE.PointsMaterial>(null);
+  const glowTex = useMemo(makeGlowSprite, []);
+
+  const { geometry, phases, speeds, base } = useMemo(() => {
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const phases = new Float32Array(count);
+    const speeds = new Float32Array(count);
+    const base = new Float32Array(count * 3);
+    const col = new THREE.Color();
+    for (let i = 0; i < count; i++) {
+      // Distribute toward the outer shell of the crown where light catches.
+      const u = Math.random();
+      const v = Math.random();
+      const theta = u * Math.PI * 2;
+      const phi = Math.acos(2 * v - 1);
+      const rr = radius * (0.55 + Math.random() * 0.5);
+      positions[i * 3] = center[0] + Math.sin(phi) * Math.cos(theta) * rr;
+      positions[i * 3 + 1] = center[1] + Math.cos(phi) * rr * 0.92;
+      positions[i * 3 + 2] = center[2] + Math.sin(phi) * Math.sin(theta) * rr;
+      // Warm gold with a little variance — some white-hot, some deep amber.
+      col.setHSL(0.11 + (Math.random() - 0.5) * 0.05, 0.85, 0.6 + Math.random() * 0.2);
+      base[i * 3] = col.r;
+      base[i * 3 + 1] = col.g;
+      base[i * 3 + 2] = col.b;
+      colors[i * 3] = col.r;
+      colors[i * 3 + 1] = col.g;
+      colors[i * 3 + 2] = col.b;
+      phases[i] = Math.random() * Math.PI * 2;
+      speeds[i] = 0.8 + Math.random() * 2.4;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    return { geometry, phases, speeds, base };
+  }, [center, radius, count]);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const night = nightRef ? nightRef.current : 0;
+    const col = geometry.attributes.color as THREE.BufferAttribute;
+    const arr = col.array as Float32Array;
+    for (let i = 0; i < count; i++) {
+      // Individual twinkle: brightness swings between a dim floor and a bright
+      // flare, so lights pop in and out rather than pulsing in unison.
+      const tw = 0.35 + 0.65 * Math.pow(0.5 + 0.5 * Math.sin(t * speeds[i] + phases[i]), 2);
+      const gain = tw * (1.15 + night * 0.6);
+      arr[i * 3] = base[i * 3] * gain;
+      arr[i * 3 + 1] = base[i * 3 + 1] * gain;
+      arr[i * 3 + 2] = base[i * 3 + 2] * gain;
+    }
+    col.needsUpdate = true;
+    if (matRef.current) matRef.current.opacity = 0.9 + night * 0.1;
+  });
+
+  return (
+    <points geometry={geometry}>
+      <pointsMaterial
+        ref={matRef}
+        map={glowTex}
+        size={0.22}
+        vertexColors
+        transparent
+        opacity={0.9}
+        depthWrite={false}
+        blending={THREE.AdditiveBlending}
+        sizeAttenuation
+        toneMapped={false}
+      />
+    </points>
   );
 }
 
