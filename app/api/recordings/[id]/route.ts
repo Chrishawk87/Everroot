@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { recordings } from "@/lib/recordings";
+import { getRecording } from "@/lib/storage";
 import { isLinkedFamily } from "@/lib/family-links";
 
 export const runtime = "nodejs";
@@ -22,7 +23,22 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const body = Buffer.from(rec.bytes);
+  // New recordings live in object storage (R2); older ones kept their audio in
+  // Postgres. Pull from whichever this recording used.
+  let body: Buffer;
+  try {
+    if (rec.storageKey) {
+      body = Buffer.from(await getRecording(rec.storageKey));
+    } else if (rec.bytes) {
+      body = Buffer.from(rec.bytes);
+    } else {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  } catch (err) {
+    console.error("Failed to load recording audio:", err);
+    return NextResponse.json({ error: "Could not load recording" }, { status: 500 });
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": rec.mimeType || "audio/webm",
     "Content-Length": String(body.byteLength),

@@ -19,7 +19,10 @@ export interface RecordingRow {
   nodeId: string;
   mimeType: string;
   durationMs: number;
-  bytes: Uint8Array;
+  // Legacy recordings keep their audio here; R2-backed recordings have `bytes`
+  // null and their audio under `storageKey`.
+  bytes: Uint8Array | null;
+  storageKey: string | null;
   transcript: string | null;
   question: string | null;
   createdAt: Date;
@@ -30,7 +33,8 @@ export interface CreateRecordingInput {
   nodeId: string;
   mimeType: string;
   durationMs: number;
-  bytes: Uint8Array;
+  bytes?: Uint8Array | null;
+  storageKey?: string | null;
   transcript?: string | null;
   question?: string | null;
 }

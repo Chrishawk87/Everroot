@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { grow, ensurePerson, linkMention } from "@/lib/forest/growth-engine";
 import { recordings } from "@/lib/recordings";
+import { storageConfigured, putRecording, newRecordingKey } from "@/lib/storage";
 import { ALL_QUESTIONS, MOMENT_TYPE_BY_QUESTION } from "@/lib/interview/script";
 import { rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
 
@@ -117,13 +118,26 @@ export async function POST(req: Request) {
   let recordingId: string | null = null;
   if (audio instanceof Blob && audio.size > 0) {
     const bytes = new Uint8Array(await audio.arrayBuffer());
+    const mimeType = audio.type || "audio/webm";
+
+    // Prefer object storage (R2). If it's configured, upload the audio there and
+    // store only the key in Postgres; the raw bytes stay out of the database.
+    // If R2 isn't configured, fall back to storing bytes in the DB as before.
+    let storageKey: string | null = null;
+    if (storageConfigured()) {
+      const key = newRecordingKey();
+      await putRecording(key, bytes, mimeType);
+      storageKey = key;
+    }
+
     const rec = await recordings().create({
       data: {
         userId,
         nodeId: result.createdNodeId,
-        mimeType: audio.type || "audio/webm",
+        mimeType,
         durationMs,
-        bytes,
+        bytes: storageKey ? null : bytes,
+        storageKey,
         transcript: transcript || null,
         question: question.prompt,
       },

@@ -222,7 +222,8 @@ model Recording {
   nodeId     String   // the memory (ForestNode) this recording belongs to
   mimeType   String   @default("audio/webm")
   durationMs Int      @default(0)
-  bytes      Bytes    // raw audio blob
+  bytes      Bytes?   // legacy: raw audio blob stored in Postgres (pre-R2 recordings)
+  storageKey String?  // R2 object key for new recordings; null means bytes live in `bytes`
   transcript String?  @db.Text
   question   String?  // the interview question that prompted this answer
   createdAt  DateTime @default(now())

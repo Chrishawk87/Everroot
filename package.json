@@ -19,6 +19,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1093.0",
     "@prisma/client": "5.18.0",
     "@react-three/drei": "9.108.3",
     "@react-three/fiber": "8.16.8",
