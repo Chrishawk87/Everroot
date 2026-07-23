@@ -364,6 +364,19 @@ function makeGroundNormal(): THREE.CanvasTexture {
   return tex;
 }
 
+// Load a real photographic (CC0) color texture from /public/assets and tile it.
+// TextureLoader populates the image asynchronously but returns the object
+// immediately, so we can configure wrapping/repeat now and it updates on load —
+// no Suspense boundary needed, and it never blocks the scene from rendering.
+function loadColorTexture(url: string, repeatX: number, repeatY: number): THREE.Texture {
+  const t = new THREE.TextureLoader().load(url);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeatX, repeatY);
+  t.anisotropy = 8;
+  return t;
+}
+
 function makeRadialShadow(): THREE.CanvasTexture {
   const s = 256;
   const c = document.createElement("canvas");
@@ -398,6 +411,14 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   const leafTex = useMemo(makeLeafTexture, []);
   const grass = useMemo(makeGrassTexture, []);
   const groundNormal = useMemo(makeGroundNormal, []);
+
+  // Real photographic bark + ground color maps (CC0). The procedural normal
+  // maps stay in play for surface relief; only the color map is swapped for the
+  // photo, which is the change that reads as "real". Repeats match the
+  // procedural normals so relief and color stay aligned.
+  const barkColor = useMemo(() => loadColorTexture("/assets/bark_color.jpg", 1.5, 3), []);
+  const groundColor = useMemo(() => loadColorTexture("/assets/ground_color.jpg", 14, 14), []);
+  const barkTex = useMemo(() => ({ map: barkColor, normal: bark.normal }), [barkColor, bark.normal]);
   const shadowTex = useMemo(makeRadialShadow, []);
 
   const crown = CROWN[graph.stage];
@@ -501,17 +522,17 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       </Environment>
 
       <Hills />
-      <Ground grass={grass} normal={groundNormal} />
+      <Ground grass={groundColor} normal={groundNormal} />
       <GrassField />
       {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
       <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} nightRef={nightRef} />
 
       {/* Woody structure. */}
-      <Trunk height={layout.trunkHeight} stageIdx={stageIdx} bark={bark} />
+      <Trunk height={layout.trunkHeight} stageIdx={stageIdx} bark={barkTex} />
       {layout.limbs
         .filter((l) => l.kind !== "twig")
         .map((limb, i) => (
-          <Branch key={i} limb={limb} bark={bark} />
+          <Branch key={i} limb={limb} bark={barkTex} />
         ))}
 
       {/* Decorative full canopy. */}
@@ -891,7 +912,7 @@ function Canopy({
 
 /* ---------- Woody parts ---------- */
 
-function Branch({ limb, bark }: { limb: Limb; bark: { map: THREE.CanvasTexture; normal: THREE.CanvasTexture } }) {
+function Branch({ limb, bark }: { limb: Limb; bark: { map: THREE.Texture; normal: THREE.Texture } }) {
   const geometry = useMemo(() => {
     const a = new THREE.Vector3(...limb.from);
     const b = new THREE.Vector3(...limb.to);
@@ -904,7 +925,9 @@ function Branch({ limb, bark }: { limb: Limb; bark: { map: THREE.CanvasTexture; 
     taperTube(geo, 16, 8, radius, radius * 0.3);
     return geo;
   }, [limb]);
-  const color = limb.kind === "root" ? "#4a3222" : "#6b4a30";
+  // Roots stay dark (underground); branches use a light warm tint so the real
+  // bark photo shows through instead of being crushed by a brown multiply.
+  const color = limb.kind === "root" ? "#4a3222" : "#b39a7c";
   return (
     <mesh geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial color={color} map={bark.map} normalMap={bark.normal} normalScale={BARK_NORMAL_SCALE} roughness={0.92} />
@@ -945,19 +968,19 @@ function Trunk({
 }: {
   height: number;
   stageIdx: number;
-  bark: { map: THREE.CanvasTexture; normal: THREE.CanvasTexture };
+  bark: { map: THREE.Texture; normal: THREE.Texture };
 }) {
   const rBottom = 0.18 + stageIdx * 0.07;
   const rTop = rBottom * 0.45;
   return (
     <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
       <cylinderGeometry args={[rTop, rBottom, height, 32, 6]} />
-      <meshStandardMaterial color="#6b4a30" map={bark.map} normalMap={bark.normal} normalScale={TRUNK_NORMAL_SCALE} roughness={0.92} />
+      <meshStandardMaterial color="#b39a7c" map={bark.map} normalMap={bark.normal} normalScale={TRUNK_NORMAL_SCALE} roughness={0.92} />
     </mesh>
   );
 }
 
-function Ground({ grass, normal }: { grass: THREE.CanvasTexture; normal: THREE.CanvasTexture }) {
+function Ground({ grass, normal }: { grass: THREE.Texture; normal: THREE.CanvasTexture }) {
   return (
     <group>
       {/* Dark soil backdrop — gives the underground volume depth so the family
@@ -975,7 +998,7 @@ function Ground({ grass, normal }: { grass: THREE.CanvasTexture; normal: THREE.C
           map={grass}
           normalMap={normal}
           normalScale={GROUND_NORMAL_SCALE}
-          color="#6f9a58"
+          color="#c4b79f"
           roughness={1}
           transparent
           opacity={0.72}

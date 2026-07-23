@@ -37,3 +37,7 @@ yarn-error.log*
 # stray imported files
 /App Idea Feedback.html
 /App Idea Feedback_files/
+
+# raw texture downloads dropped in repo root (optimized copies live in public/assets)
+/*_diff.jpg
+/*_diff.jpg *
