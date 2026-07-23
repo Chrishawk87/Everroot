@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Sky, Environment, Lightformer } from "@react-three/drei";
+import { OrbitControls, Html, Sky, Environment, Lightformer, Clouds, Cloud } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette, SMAA } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { ForestGraph, ForestNodeDTO, GrowthStage } from "@/lib/forest/types";
@@ -48,7 +48,7 @@ const DAY_ATMOSPHERE: Atmosphere = {
   sun: SUN_POSITION,
   background: "#cfe3d6",
   sky: { turbidity: 6, rayleigh: 1.4, mieCoefficient: 0.006, mieDirectionalG: 0.85 },
-  fog: { color: "#d7e6d2", near: 22, far: 65 },
+  fog: { color: "#d7e6d2", near: 48, far: 150 },
   ambient: 0.4,
   hemi: { sky: "#e6f2e6", ground: "#4a5b34", intensity: 0.65 },
   dir: { color: "#fff1d6", intensity: 2.1 },
@@ -59,7 +59,7 @@ const MEMORIAL_ATMOSPHERE: Atmosphere = {
   sun: MEMORIAL_SUN,
   background: "#141d2b",
   sky: { turbidity: 10, rayleigh: 3.2, mieCoefficient: 0.02, mieDirectionalG: 0.82 },
-  fog: { color: "#26303f", near: 14, far: 52 },
+  fog: { color: "#26303f", near: 36, far: 120 },
   ambient: 0.26,
   hemi: { sky: "#9fb0cc", ground: "#2a2b24", intensity: 0.4 },
   dir: { color: "#e7b184", intensity: 1.25 },
@@ -82,7 +82,7 @@ const NIGHT_ATMOSPHERE: Atmosphere = {
   sun: [18, -6, 16],
   background: "#0a1020",
   sky: { turbidity: 0.1, rayleigh: 0.35, mieCoefficient: 0.001, mieDirectionalG: 0.9 },
-  fog: { color: "#0d1526", near: 16, far: 62 },
+  fog: { color: "#0d1526", near: 38, far: 130 },
   ambient: 0.18,
   hemi: { sky: "#38507a", ground: "#0e141d", intensity: 0.35 },
   dir: { color: "#9fb8e0", intensity: 0.28 },
@@ -93,7 +93,7 @@ const DAWN_ATMOSPHERE: Atmosphere = {
   sun: [26, 5, 16],
   background: "#e6c4a8",
   sky: { turbidity: 4, rayleigh: 2.4, mieCoefficient: 0.02, mieDirectionalG: 0.85 },
-  fog: { color: "#e6cbb6", near: 18, far: 62 },
+  fog: { color: "#e6cbb6", near: 42, far: 135 },
   ambient: 0.34,
   hemi: { sky: "#f6dcc4", ground: "#40492e", intensity: 0.5 },
   dir: { color: "#ffd9a8", intensity: 1.3 },
@@ -104,7 +104,7 @@ const GOLDEN_ATMOSPHERE: Atmosphere = {
   sun: [-26, 10, -20],
   background: "#e8d3a8",
   sky: { turbidity: 7, rayleigh: 2.0, mieCoefficient: 0.02, mieDirectionalG: 0.9 },
-  fog: { color: "#e6d0a2", near: 20, far: 63 },
+  fog: { color: "#e6d0a2", near: 46, far: 140 },
   ambient: 0.4,
   hemi: { sky: "#f3e0b0", ground: "#4a4a2e", intensity: 0.6 },
   dir: { color: "#ffcf8a", intensity: 2.0 },
@@ -115,7 +115,7 @@ const SUNSET_ATMOSPHERE: Atmosphere = {
   sun: [-26, 2.5, -22],
   background: "#3a2c3e",
   sky: { turbidity: 10, rayleigh: 3.4, mieCoefficient: 0.03, mieDirectionalG: 0.85 },
-  fog: { color: "#3a2f3e", near: 16, far: 56 },
+  fog: { color: "#3a2f3e", near: 40, far: 125 },
   ambient: 0.28,
   hemi: { sky: "#c58aa0", ground: "#2a2320", intensity: 0.42 },
   dir: { color: "#ff9d6a", intensity: 1.1 },
@@ -169,11 +169,11 @@ const MEMORY_KINDS = new Set(["LEAF", "FLOWER", "FRUIT", "PHOTO", "MEMORY", "MEM
 // Crown fullness by growth stage: radius + decorative leaf count.
 const CROWN: Record<GrowthStage, { r: number; count: number }> = {
   SEED: { r: 0, count: 0 },
-  SPROUT: { r: 0.55, count: 45 },
-  SAPLING: { r: 1.15, count: 180 },
-  YOUNG_TREE: { r: 1.9, count: 480 },
-  MATURE_TREE: { r: 2.6, count: 950 },
-  ANCIENT_TREE: { r: 3.3, count: 1450 },
+  SPROUT: { r: 0.55, count: 70 },
+  SAPLING: { r: 1.15, count: 280 },
+  YOUNG_TREE: { r: 1.9, count: 700 },
+  MATURE_TREE: { r: 2.6, count: 1350 },
+  ANCIENT_TREE: { r: 3.3, count: 2000 },
 };
 const STAGE_INDEX: Record<GrowthStage, number> = {
   SEED: 0, SPROUT: 1, SAPLING: 2, YOUNG_TREE: 3, MATURE_TREE: 4, ANCIENT_TREE: 5,
@@ -377,6 +377,71 @@ function loadColorTexture(url: string, repeatX: number, repeatY: number): THREE.
   return t;
 }
 
+// A soft, feathered puff used as the billboard sprite for drei <Cloud>. Built
+// as a canvas → data URL so the clouds carry no external asset dependency
+// (drei's default cloud texture is a remote CDN file we don't want to rely on).
+function makeCloudDataUrl(): string {
+  const s = 128;
+  const c = document.createElement("canvas");
+  c.width = s;
+  c.height = s;
+  const x = c.getContext("2d")!;
+  const g = x.createRadialGradient(s / 2, s / 2, 4, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.5, "rgba(255,255,255,0.75)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = g;
+  x.fillRect(0, 0, s, s);
+  // Break up the perfect circle with a few softer lobes for a wispier edge.
+  for (let i = 0; i < 30; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 20 + Math.random() * 34;
+    const px = s / 2 + Math.cos(a) * (18 + Math.random() * 20);
+    const py = s / 2 + Math.sin(a) * (18 + Math.random() * 20);
+    const lg = x.createRadialGradient(px, py, 2, px, py, r);
+    lg.addColorStop(0, `rgba(255,255,255,${0.12 + Math.random() * 0.12})`);
+    lg.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = lg;
+    x.beginPath();
+    x.arc(px, py, r, 0, Math.PI * 2);
+    x.fill();
+  }
+  return c.toDataURL("image/png");
+}
+
+// A soft round glow used as the sprite for the drifting lantern lights, so they
+// read as warm points of light being held aloft rather than hard dust specks.
+function makeGlowSprite(): THREE.CanvasTexture {
+  const s = 64;
+  const c = document.createElement("canvas");
+  c.width = s;
+  c.height = s;
+  const x = c.getContext("2d")!;
+  const g = x.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.25, "rgba(255,240,205,0.9)");
+  g.addColorStop(0.6, "rgba(255,209,140,0.35)");
+  g.addColorStop(1, "rgba(255,190,110,0)");
+  x.fillStyle = g;
+  x.fillRect(0, 0, s, s);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// A gentle band of clouds drifting high above the forest. Kept far up and out so
+// they never intersect the tree, and slow-moving so the sky feels alive but calm.
+function SkyClouds() {
+  const texUrl = useMemo(makeCloudDataUrl, []);
+  return (
+    <Clouds texture={texUrl} limit={200} position={[0, 26, 0]}>
+      <Cloud seed={1} segments={26} bounds={[26, 3, 18]} volume={9} color="#f4f6ff" opacity={0.55} speed={0.14} growth={5} position={[-14, 0, -18]} />
+      <Cloud seed={7} segments={22} bounds={[22, 3, 16]} volume={8} color="#eef2ff" opacity={0.5} speed={0.1} growth={5} position={[16, 3, -24]} />
+      <Cloud seed={13} segments={20} bounds={[20, 2.5, 14]} volume={7} color="#ffffff" opacity={0.45} speed={0.12} growth={4} position={[4, 6, 22]} />
+    </Clouds>
+  );
+}
+
 function makeRadialShadow(): THREE.CanvasTexture {
   const s = 256;
   const c = document.createElement("canvas");
@@ -522,6 +587,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       </Environment>
 
       <Hills />
+      <SkyClouds />
       <Ground grass={groundColor} normal={groundNormal} />
       <GrassField />
       {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
@@ -594,7 +660,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 // out with distance so the edge blends into the textured ground plane.
 // Short blade so the grass carpets the ground rather than standing tall.
 const BLADE_H = 0.26;
-function GrassField({ count = 20000, inner = 0.5, outer = 24 }: { count?: number; inner?: number; outer?: number }) {
+function GrassField({ count = 34000, inner = 0.5, outer = 28 }: { count?: number; inner?: number; outer?: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const matRef = useRef<THREE.MeshStandardMaterial>(null);
   const shaderRef = useRef<{ uniforms: { uTime: { value: number } } } | null>(null);
@@ -1046,8 +1112,8 @@ function Hills() {
 
 function Motes({
   trunkHeight,
-  color = "#fff2c8",
-  opacity = 0.35,
+  color = "#ffdca6",
+  opacity = 0.5,
   nightRef,
 }: {
   trunkHeight: number;
@@ -1057,7 +1123,8 @@ function Motes({
 }) {
   const ref = useRef<THREE.Points>(null);
   const matRef = useRef<THREE.PointsMaterial>(null);
-  const COUNT = 60;
+  const glowTex = useMemo(makeGlowSprite, []);
+  const COUNT = 50;
   const { geometry, speeds } = useMemo(() => {
     const positions = new Float32Array(COUNT * 3);
     const speeds = new Float32Array(COUNT);
@@ -1085,12 +1152,16 @@ function Motes({
       pos.setX(i, pos.getX(i) + Math.sin(t * 0.3 + i) * delta * 0.05);
     }
     pos.needsUpdate = true;
-    // Motes read like fireflies after dark: they glow stronger at night.
-    if (matRef.current && nightRef) matRef.current.opacity = opacity + nightRef.current * 0.3;
+    // Lanterns breathe gently and glow stronger after dark.
+    if (matRef.current) {
+      const pulse = 0.82 + Math.sin(t * 0.7) * 0.18;
+      const night = nightRef ? nightRef.current * 0.3 : 0;
+      matRef.current.opacity = (opacity + night) * pulse;
+    }
   });
   return (
     <points ref={ref} geometry={geometry}>
-      <pointsMaterial ref={matRef} size={0.05} color={color} transparent opacity={opacity} depthWrite={false} blending={THREE.AdditiveBlending} sizeAttenuation />
+      <pointsMaterial ref={matRef} map={glowTex} size={0.34} color={color} transparent opacity={opacity} depthWrite={false} blending={THREE.AdditiveBlending} sizeAttenuation />
     </points>
   );
 }
@@ -1365,21 +1436,32 @@ function NodeGlyph({
   const { node, position, scale } = positioned;
   const [hovered, setHovered] = useState(false);
   const ref = useRef<THREE.Group>(null);
+  const haloRef = useRef<THREE.Mesh>(null);
   const appear = useRef(0);
 
   useFrame((state, delta) => {
     if (!ref.current) return;
     const t = state.clock.elapsedTime;
     appear.current = THREE.MathUtils.damp(appear.current, 1, 5, delta);
-    const emphasis = selected ? 1.5 : hovered ? 1.25 : justGrew ? 1.3 : 1;
+    const emphasis = selected ? 1.6 : hovered ? 1.25 : justGrew ? 1.3 : 1;
     ref.current.scale.setScalar(appear.current * emphasis);
     if (node.kind === "LEAF" || node.kind === "FLOWER" || node.kind === "FRUIT") {
       ref.current.rotation.z = Math.sin(t * 0.9 + position[0]) * 0.09;
       ref.current.rotation.x = Math.cos(t * 0.7 + position[2]) * 0.05;
     }
+    // Bloom-on-touch: the selected memory's halo breathes softly.
+    if (haloRef.current) {
+      const p = 1 + Math.sin(t * 2.2) * 0.07;
+      haloRef.current.scale.setScalar(p);
+    }
   });
 
   const color = overrideColor ?? COLORS[node.kind] ?? "#9ad0b0";
+  const isMemory = MEMORY_KINDS.has(node.kind);
+  const year = useMemo(() => {
+    const d = new Date(node.createdAt);
+    return Number.isNaN(d.getTime()) ? null : d.getFullYear();
+  }, [node.createdAt]);
 
   return (
     <group
@@ -1399,15 +1481,34 @@ function NodeGlyph({
         onSelect(node);
       }}
     >
-      <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew} categorized={!!overrideColor} leafTex={leafTex} seed={hash01(node.id, 9)} />
+      <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew || selected} categorized={!!overrideColor} leafTex={leafTex} seed={hash01(node.id, 9)} />
       {justGrew ? <GrowthBurst scale={scale} /> : null}
-      {(hovered || selected) && (
-        <Html center distanceFactor={10} position={[0, scale + 0.5, 0]}>
-          <div className="pointer-events-none select-none whitespace-nowrap rounded-full bg-black/80 px-3 py-1 text-xs text-parchment">
+
+      {/* Bloom-on-touch: a warm glowing halo opens around the chosen memory. */}
+      {selected ? (
+        <mesh ref={haloRef}>
+          <sphereGeometry args={[scale * 2.4, 24, 24]} />
+          <meshBasicMaterial color="#ffe6b0" transparent opacity={0.16} blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      ) : null}
+
+      {/* A soft, always-present name + year floats beside each memory so the tree
+          reads as real moments, not abstract shapes. It brightens on touch. */}
+      {hovered || selected ? (
+        <Html center distanceFactor={10} position={[0, scale + 0.6, 0]}>
+          <div className="pointer-events-none select-none whitespace-nowrap rounded-full bg-black/75 px-3 py-1 font-serif text-xs text-parchment [text-shadow:0_1px_4px_rgba(0,0,0,0.9)]">
             {node.title}
+            {year ? <span className="text-parchment/50"> · {year}</span> : null}
           </div>
         </Html>
-      )}
+      ) : isMemory ? (
+        <Html center distanceFactor={15} position={[0, scale + 0.5, 0]} zIndexRange={[10, 0]}>
+          <div className="pointer-events-none select-none whitespace-nowrap font-serif text-[11px] text-parchment/70 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]">
+            {node.title}
+            {year ? <span className="text-parchment/40"> · {year}</span> : null}
+          </div>
+        </Html>
+      ) : null}
     </group>
   );
 }
