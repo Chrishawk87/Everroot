@@ -15,11 +15,13 @@ export default function MemorialControls({
   ownerName,
   isMemorial,
   isViewerGuardian,
+  memorialNote = null,
 }: {
   ownerId: string;
   ownerName: string;
   isMemorial: boolean;
   isViewerGuardian: boolean;
+  memorialNote?: string | null;
 }) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
@@ -28,6 +30,22 @@ export default function MemorialControls({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmOn, setConfirmOn] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState(memorialNote ?? "");
+
+  async function saveNote(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const res = await setMemorialMode({ ownerId, on: true, note });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? "Something went wrong");
+      return;
+    }
+    setNoteOpen(false);
+    router.refresh();
+  }
 
   async function submitTribute(e: React.FormEvent) {
     e.preventDefault();
@@ -108,6 +126,50 @@ export default function MemorialControls({
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
             </svg>
             Leave a tribute
+          </button>
+        )
+      ) : null}
+
+      {/* Guardian's remembrance-note editor. */}
+      {isViewerGuardian && isMemorial ? (
+        noteOpen ? (
+          <form
+            onSubmit={saveNote}
+            className="w-full max-w-sm space-y-2 rounded-2xl border border-parchment/15 bg-black/70 p-4 backdrop-blur"
+          >
+            <p className="font-serif text-parchment">Remembrance note</p>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="A few words to remember them by…"
+              rows={3}
+              maxLength={2000}
+              className="w-full resize-y rounded-xl border border-parchment/15 bg-black/40 px-3 py-2 text-sm text-parchment placeholder:text-parchment/30 focus:border-canopy-light focus:outline-none"
+            />
+            {error ? <p className="text-xs text-red-300">{error}</p> : null}
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={busy}
+                className="flex-1 rounded-full bg-fruit px-4 py-2 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-50"
+              >
+                {busy ? "Saving…" : "Save note"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNoteOpen(false)}
+                className="rounded-full border border-parchment/20 px-4 py-2 text-sm text-parchment/70 transition hover:border-parchment/50"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button
+            onClick={() => setNoteOpen(true)}
+            className="inline-flex items-center rounded-full border border-parchment/20 bg-black/40 px-4 py-1.5 font-sans text-xs text-parchment/70 transition hover:border-parchment/50"
+          >
+            {memorialNote ? "Edit remembrance note" : "Add remembrance note"}
           </button>
         )
       ) : null}

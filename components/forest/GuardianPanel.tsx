@@ -18,11 +18,13 @@ export interface FamilyOption {
 export default function GuardianPanel({
   ownerId,
   isMemorial,
+  memorialNote = null,
   currentGuardianId,
   family,
 }: {
   ownerId: string;
   isMemorial: boolean;
+  memorialNote?: string | null;
   currentGuardianId: string | null;
   family: FamilyOption[];
 }) {
@@ -32,6 +34,22 @@ export default function GuardianPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmMemorial, setConfirmMemorial] = useState(false);
+  const [note, setNote] = useState(memorialNote ?? "");
+  const [noteSaved, setNoteSaved] = useState(false);
+
+  async function saveNote() {
+    setBusy(true);
+    setError(null);
+    setNoteSaved(false);
+    const res = await setMemorialMode({ ownerId, on: true, note });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? "Something went wrong");
+      return;
+    }
+    setNoteSaved(true);
+    router.refresh();
+  }
 
   const currentGuardian = family.find((f) => f.userId === currentGuardianId) ?? null;
 
@@ -164,6 +182,35 @@ export default function GuardianPanel({
                     <div className="rounded-2xl border border-fruit/40 bg-canopy/20 px-4 py-3 text-sm text-parchment">
                       This forest is a memorial.
                     </div>
+
+                    {/* Remembrance note — shown under "In loving memory". */}
+                    <div>
+                      <label className="text-xs uppercase tracking-widest text-canopy-light">
+                        Remembrance note
+                      </label>
+                      <textarea
+                        value={note}
+                        onChange={(e) => {
+                          setNote(e.target.value);
+                          setNoteSaved(false);
+                        }}
+                        placeholder="A few words to remember them by…"
+                        rows={3}
+                        maxLength={2000}
+                        className="mt-1 w-full resize-y rounded-xl border border-parchment/15 bg-black/40 px-3 py-2 text-sm text-parchment placeholder:text-parchment/30 focus:border-canopy-light focus:outline-none"
+                      />
+                      <div className="mt-2 flex items-center gap-3">
+                        <button
+                          onClick={saveNote}
+                          disabled={busy || note === (memorialNote ?? "")}
+                          className="rounded-full bg-fruit px-4 py-1.5 text-sm font-semibold text-black transition hover:brightness-110 disabled:opacity-40"
+                        >
+                          {busy ? "Saving…" : "Save note"}
+                        </button>
+                        {noteSaved ? <span className="text-xs text-canopy-light">Saved</span> : null}
+                      </div>
+                    </div>
+
                     <button
                       onClick={() => toggleMemorial(false)}
                       disabled={busy}

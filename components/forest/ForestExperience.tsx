@@ -129,15 +129,13 @@ export default function ForestExperience({
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      <div
-        className="absolute inset-0 transition-[filter] duration-1000"
-        style={graph.isMemorial ? { filter: "sepia(0.45) saturate(0.75) brightness(0.9)" } : undefined}
-      >
+      <div className="absolute inset-0">
         <ForestCanvas
           graph={graph}
           selectedId={selected?.id ?? null}
           focusId={focusId}
           onSelect={setSelected}
+          memorial={graph.isMemorial}
         />
       </div>
 
@@ -279,6 +277,7 @@ export default function ForestExperience({
           <GuardianPanel
             ownerId={ownerId}
             isMemorial={graph.isMemorial}
+            memorialNote={graph.memorialNote}
             currentGuardianId={guardianId}
             family={familyOptions}
           />

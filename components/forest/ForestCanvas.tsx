@@ -21,6 +21,45 @@ const COLORS: Record<string, string> = {
 
 const HIDDEN = new Set(["TIMELINE_EVENT", "RELATIONSHIP", "SUB_BRANCH"]);
 const SUN_POSITION: Vec3 = [-28, 30, -18];
+// A memorial forest is lit at dusk: the sun rests low on the horizon, casting a
+// long amber light that fades to a deep twilight blue overhead — a quiet, elegiac
+// version of the same living world.
+const MEMORIAL_SUN: Vec3 = [-26, 3.5, -20];
+
+// Atmosphere palette, swapped whole when a forest becomes a memorial.
+interface Atmosphere {
+  sun: Vec3;
+  background: string;
+  sky: { turbidity: number; rayleigh: number; mieCoefficient: number; mieDirectionalG: number };
+  fog: { color: string; near: number; far: number };
+  ambient: number;
+  hemi: { sky: string; ground: string; intensity: number };
+  dir: { color: string; intensity: number };
+  motes: { color: string; opacity: number };
+}
+
+const DAY_ATMOSPHERE: Atmosphere = {
+  sun: SUN_POSITION,
+  background: "#cfe3d6",
+  sky: { turbidity: 6, rayleigh: 1.4, mieCoefficient: 0.006, mieDirectionalG: 0.85 },
+  fog: { color: "#d7e6d2", near: 22, far: 65 },
+  ambient: 0.4,
+  hemi: { sky: "#e6f2e6", ground: "#4a5b34", intensity: 0.65 },
+  dir: { color: "#fff1d6", intensity: 2.1 },
+  motes: { color: "#fff2c8", opacity: 0.35 },
+};
+
+const MEMORIAL_ATMOSPHERE: Atmosphere = {
+  sun: MEMORIAL_SUN,
+  background: "#141d2b",
+  sky: { turbidity: 10, rayleigh: 3.2, mieCoefficient: 0.02, mieDirectionalG: 0.82 },
+  fog: { color: "#26303f", near: 14, far: 52 },
+  ambient: 0.26,
+  hemi: { sky: "#9fb0cc", ground: "#2a2b24", intensity: 0.4 },
+  dir: { color: "#e7b184", intensity: 1.25 },
+  // Warmer, brighter drifting motes read like candlelight or rising embers of memory.
+  motes: { color: "#ffd8a0", opacity: 0.6 },
+};
 
 // Crown fullness by growth stage: radius + decorative leaf count.
 const CROWN: Record<GrowthStage, { r: number; count: number }> = {
@@ -170,11 +209,13 @@ interface Props {
   selectedId: string | null;
   focusId: string | null;
   onSelect: (node: ForestNodeDTO | null) => void;
+  memorial?: boolean;
 }
 
-export default function ForestCanvas({ graph, selectedId, focusId, onSelect }: Props) {
+export default function ForestCanvas({ graph, selectedId, focusId, onSelect, memorial = false }: Props) {
   const layout = useMemo(() => computeLayout(graph), [graph]);
   const stageIdx = STAGE_INDEX[graph.stage];
+  const atmo = memorial ? MEMORIAL_ATMOSPHERE : DAY_ATMOSPHERE;
 
   const bark = useMemo(makeBarkTexture, []);
   const leafTex = useMemo(makeLeafTexture, []);
@@ -200,16 +241,16 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect }: P
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       onPointerMissed={() => onSelect(null)}
     >
-      <color attach="background" args={["#cfe3d6"]} />
-      <Sky distance={450000} sunPosition={SUN_POSITION} turbidity={6} rayleigh={1.4} mieCoefficient={0.006} mieDirectionalG={0.85} />
-      <fog attach="fog" args={["#d7e6d2", 22, 65]} />
+      <color attach="background" args={[atmo.background]} />
+      <Sky distance={450000} sunPosition={atmo.sun} turbidity={atmo.sky.turbidity} rayleigh={atmo.sky.rayleigh} mieCoefficient={atmo.sky.mieCoefficient} mieDirectionalG={atmo.sky.mieDirectionalG} />
+      <fog attach="fog" args={[atmo.fog.color, atmo.fog.near, atmo.fog.far]} />
 
-      <ambientLight intensity={0.4} />
-      <hemisphereLight args={["#e6f2e6", "#4a5b34", 0.65]} />
+      <ambientLight intensity={atmo.ambient} />
+      <hemisphereLight args={[atmo.hemi.sky, atmo.hemi.ground, atmo.hemi.intensity]} />
       <directionalLight
-        position={SUN_POSITION}
-        intensity={2.1}
-        color="#fff1d6"
+        position={atmo.sun}
+        intensity={atmo.dir.intensity}
+        color={atmo.dir.color}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0004}
@@ -224,7 +265,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect }: P
       <Hills />
       <Ground grass={grass} />
       {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
-      <Motes trunkHeight={layout.trunkHeight} />
+      <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} />
 
       {/* Woody structure. */}
       <Trunk height={layout.trunkHeight} stageIdx={stageIdx} bark={bark} />
@@ -619,7 +660,15 @@ function Hills() {
   );
 }
 
-function Motes({ trunkHeight }: { trunkHeight: number }) {
+function Motes({
+  trunkHeight,
+  color = "#fff2c8",
+  opacity = 0.35,
+}: {
+  trunkHeight: number;
+  color?: string;
+  opacity?: number;
+}) {
   const ref = useRef<THREE.Points>(null);
   const COUNT = 60;
   const { geometry, speeds } = useMemo(() => {
@@ -652,7 +701,7 @@ function Motes({ trunkHeight }: { trunkHeight: number }) {
   });
   return (
     <points ref={ref} geometry={geometry}>
-      <pointsMaterial size={0.05} color="#fff2c8" transparent opacity={0.35} depthWrite={false} blending={THREE.AdditiveBlending} sizeAttenuation />
+      <pointsMaterial size={0.05} color={color} transparent opacity={opacity} depthWrite={false} blending={THREE.AdditiveBlending} sizeAttenuation />
     </points>
   );
 }

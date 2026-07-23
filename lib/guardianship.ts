@@ -35,6 +35,7 @@ interface GuardianDelegate {
 interface MemorialDelegate {
   create(args: { data: { ownerId: string; note?: string | null } }): Promise<MemorialRow>;
   findUnique(args: { where: { ownerId: string } }): Promise<MemorialRow | null>;
+  update(args: { where: { ownerId: string }; data: { note: string | null } }): Promise<MemorialRow>;
   delete(args: { where: { ownerId: string } }): Promise<MemorialRow>;
 }
 
@@ -92,7 +93,12 @@ export async function getMemorial(ownerId: string): Promise<MemorialRow | null> 
   return memorialDelegate().findUnique({ where: { ownerId } });
 }
 
-/** Turn memorial mode on (idempotent) or off for a forest. */
+/**
+ * Turn memorial mode on (idempotent) or off for a forest, optionally setting the
+ * remembrance note. `note` semantics: `undefined` leaves any existing note
+ * untouched; a string (or explicit null) sets/clears it. This lets the memorial
+ * toggle and the note editor share one path without clobbering each other.
+ */
 export async function setMemorial(
   ownerId: string,
   on: boolean,
@@ -100,7 +106,11 @@ export async function setMemorial(
 ): Promise<void> {
   const existing = await memorialDelegate().findUnique({ where: { ownerId } });
   if (on) {
-    if (!existing) await memorialDelegate().create({ data: { ownerId, note: note ?? null } });
+    if (!existing) {
+      await memorialDelegate().create({ data: { ownerId, note: note ?? null } });
+    } else if (note !== undefined) {
+      await memorialDelegate().update({ where: { ownerId }, data: { note } });
+    }
   } else if (existing) {
     await memorialDelegate().delete({ where: { ownerId } });
   }

@@ -39,11 +39,8 @@ export default function ReadOnlyForest({
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      <div
-        className="absolute inset-0 transition-[filter] duration-1000"
-        style={graph.isMemorial ? { filter: "sepia(0.45) saturate(0.75) brightness(0.9)" } : undefined}
-      >
-        <ForestCanvas graph={graph} selectedId={selected?.id ?? null} focusId={null} onSelect={setSelected} />
+      <div className="absolute inset-0">
+        <ForestCanvas graph={graph} selectedId={selected?.id ?? null} focusId={null} onSelect={setSelected} memorial={graph.isMemorial} />
       </div>
 
       {/* Memorial banner. */}
@@ -90,6 +87,7 @@ export default function ReadOnlyForest({
             ownerName={graph.profile.displayName}
             isMemorial={graph.isMemorial}
             isViewerGuardian={isViewerGuardian}
+            memorialNote={graph.memorialNote}
           />
         </div>
       </div>

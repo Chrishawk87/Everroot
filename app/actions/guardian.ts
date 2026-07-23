@@ -82,7 +82,11 @@ export async function setMemorialMode(input: {
     return { ok: false, error: "Only the owner or their guardian can do this" };
   }
 
-  await setMemorial(ownerId, input.on, input.note?.trim() || null);
+  // Only pass the note through when the caller actually sent one, so a plain
+  // on/off toggle never wipes an existing remembrance note.
+  const note =
+    input.note !== undefined ? (input.note.trim().slice(0, 2000) || null) : undefined;
+  await setMemorial(ownerId, input.on, note);
   return { ok: true };
 }
 
