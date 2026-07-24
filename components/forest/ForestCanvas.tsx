@@ -63,12 +63,12 @@ const DAY_ATMOSPHERE: Atmosphere = {
   // A lower sun + richer sky so the horizon glows deep amber rather than
   // blowing out to white where the disc sits behind the tree.
   sun: [-30, 4.2, -24],
-  background: "#e3b877",
-  sky: { turbidity: 8, rayleigh: 2.4, mieCoefficient: 0.026, mieDirectionalG: 0.9 },
-  fog: { color: "#e0bd7e", near: 44, far: 140 },
-  ambient: 0.32,
-  hemi: { sky: "#f2dca6", ground: "#3f4a2c", intensity: 0.5 },
-  dir: { color: "#ffc276", intensity: 1.4 },
+  background: "#dcb173",
+  sky: { turbidity: 5, rayleigh: 2.2, mieCoefficient: 0.016, mieDirectionalG: 0.8 },
+  fog: { color: "#d9b478", near: 44, far: 140 },
+  ambient: 0.28,
+  hemi: { sky: "#f2dca6", ground: "#3f4a2c", intensity: 0.42 },
+  dir: { color: "#ffc276", intensity: 1.05 },
   motes: { color: "#ffe2a6", opacity: 0.42 },
 };
 
@@ -78,8 +78,8 @@ const MEMORIAL_ATMOSPHERE: Atmosphere = {
   sky: { turbidity: 10, rayleigh: 3.2, mieCoefficient: 0.02, mieDirectionalG: 0.82 },
   fog: { color: "#26303f", near: 36, far: 120 },
   ambient: 0.26,
-  hemi: { sky: "#9fb0cc", ground: "#2a2b24", intensity: 0.4 },
-  dir: { color: "#e7b184", intensity: 1.25 },
+  hemi: { sky: "#9fb0cc", ground: "#2a2b24", intensity: 0.38 },
+  dir: { color: "#e7b184", intensity: 1.05 },
   // Warmer, brighter drifting motes read like candlelight or rising embers of memory.
   motes: { color: "#ffd8a0", opacity: 0.6 },
 };
@@ -112,19 +112,19 @@ const DAWN_ATMOSPHERE: Atmosphere = {
   sky: { turbidity: 4, rayleigh: 2.4, mieCoefficient: 0.02, mieDirectionalG: 0.85 },
   fog: { color: "#e6cbb6", near: 42, far: 135 },
   ambient: 0.34,
-  hemi: { sky: "#f6dcc4", ground: "#40492e", intensity: 0.5 },
-  dir: { color: "#ffd9a8", intensity: 1.3 },
+  hemi: { sky: "#f6dcc4", ground: "#40492e", intensity: 0.46 },
+  dir: { color: "#ffd9a8", intensity: 1.05 },
   motes: { color: "#ffe4c0", opacity: 0.4 },
 };
 
 const GOLDEN_ATMOSPHERE: Atmosphere = {
   sun: [-26, 10, -20],
-  background: "#e8d3a8",
-  sky: { turbidity: 7, rayleigh: 2.0, mieCoefficient: 0.02, mieDirectionalG: 0.9 },
-  fog: { color: "#e6d0a2", near: 46, far: 140 },
-  ambient: 0.4,
-  hemi: { sky: "#f3e0b0", ground: "#4a4a2e", intensity: 0.6 },
-  dir: { color: "#ffcf8a", intensity: 2.0 },
+  background: "#e2caa0",
+  sky: { turbidity: 6, rayleigh: 2.0, mieCoefficient: 0.017, mieDirectionalG: 0.82 },
+  fog: { color: "#e0c99c", near: 46, far: 140 },
+  ambient: 0.34,
+  hemi: { sky: "#f3e0b0", ground: "#4a4a2e", intensity: 0.5 },
+  dir: { color: "#ffcf8a", intensity: 1.35 },
   motes: { color: "#ffe6b0", opacity: 0.42 },
 };
 
@@ -134,8 +134,8 @@ const SUNSET_ATMOSPHERE: Atmosphere = {
   sky: { turbidity: 10, rayleigh: 3.4, mieCoefficient: 0.03, mieDirectionalG: 0.85 },
   fog: { color: "#3a2f3e", near: 40, far: 125 },
   ambient: 0.28,
-  hemi: { sky: "#c58aa0", ground: "#2a2320", intensity: 0.42 },
-  dir: { color: "#ff9d6a", intensity: 1.1 },
+  hemi: { sky: "#c58aa0", ground: "#2a2320", intensity: 0.4 },
+  dir: { color: "#ff9d6a", intensity: 0.95 },
   motes: { color: "#ffcfa0", opacity: 0.55 },
 };
 
@@ -658,7 +658,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       dpr={[1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.72 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.6 }}
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={[atmo.background]} />
@@ -685,10 +685,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {/* Strong warm rim light from low behind the tree: the golden-hour sun
           rakes through the canopy and lights the silhouette from the back,
           just like the concept. No shadow — purely cinematic separation. */}
-      <directionalLight position={[-14, 4, -16]} intensity={1.05} color="#ffb85e" />
+      <directionalLight position={[-14, 4, -16]} intensity={0.8} color="#ffb85e" />
       {/* Low sun-glow point tucked behind the trunk fork so light appears to
           burst through the split of the tree toward the viewer. */}
-      <pointLight position={[0, 2.4, -3]} intensity={1.6} distance={22} decay={1.6} color="#ffc873" />
+      <pointLight position={[0, 2.4, -3]} intensity={1.0} distance={22} decay={1.6} color="#ffc873" />
 
       {/* The day-cycle drives all of the above; memorial forests hold at dusk. */}
       <SceneClock
@@ -712,8 +712,8 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           built entirely in-scene (no external HDRI files). Gives leaves, fruit
           and bark realistic soft highlights and gentle reflections. */}
       <Environment resolution={256} frames={1}>
-        <Lightformer intensity={0.7} color="#dfeaff" position={[0, 8, 0]} scale={[12, 12, 1]} form="ring" />
-        <Lightformer intensity={1.4} color="#fff0d6" position={[-6, 5, -5]} scale={[6, 6, 1]} />
+        <Lightformer intensity={0.55} color="#dfeaff" position={[0, 8, 0]} scale={[12, 12, 1]} form="ring" />
+        <Lightformer intensity={0.9} color="#fff0d6" position={[-6, 5, -5]} scale={[6, 6, 1]} />
         <Lightformer intensity={0.35} color="#3d5230" position={[0, -6, 0]} scale={[14, 14, 1]} rotation={[Math.PI / 2, 0, 0]} />
       </Environment>
 
@@ -833,7 +833,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {/* Cinematic pass: bloom lifts the glowing memories, stars and low sun;
           SMAA cleans edges; a soft vignette focuses the eye on the tree. */}
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom mipmapBlur luminanceThreshold={0.86} luminanceSmoothing={0.3} intensity={0.5} radius={0.62} />
+        <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.28} intensity={0.32} radius={0.6} />
         <SMAA />
         <Vignette offset={0.28} darkness={0.62} eskil={false} />
       </EffectComposer>
