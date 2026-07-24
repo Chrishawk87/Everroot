@@ -707,7 +707,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         minDistance={4}
         maxDistance={48}
         minPolarAngle={0.25}
-        maxPolarAngle={Math.PI / 2.05}
+        maxPolarAngle={Math.PI / 1.3}
         target={[0, layout.trunkHeight * 0.5, 0]}
       />
       <CameraRig focusPos={focusPos} />
