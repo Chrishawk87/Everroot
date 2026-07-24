@@ -1,4 +1,4 @@
-import type { ForestGraph, ForestNodeDTO, GrowthStage } from "./types";
+import type { ForestGraph, ForestNodeDTO } from "./types";
 
 export type Vec3 = [number, number, number];
 
@@ -29,21 +29,107 @@ export interface ForestLayout {
   forks: Fork[];
   positioned: PositionedNode[];
   limbs: Limb[];
+  /** ---- Continuous growth grammar (form read from the life, not a stage bucket) ---- */
+  /** Trunk girth at the ground — grows with the volume of a life's memories. */
+  trunkRadiusBottom: number;
+  /** Trunk girth where it meets the forks (flows smoothly into them). */
+  trunkRadiusTop: number;
+  /** Crown spread, proportional to height so the tree always reads as balanced. */
+  crownRadius: number;
+  /** How many decorative leaves fill the crown at this size/fullness. */
+  crownCount: number;
+  /** 0..1 canopy fullness (memories + life-themes) — drives leaf density. */
+  crownFullness: number;
+  /** Multiplier applied to every limb's thickness so branches stay in
+   *  proportion to the trunk at any size (a small tree has fine twigs, an
+   *  ancient one has massive boughs). 1.0 ≈ a fully mature tree. */
+  girthScale: number;
+}
+
+// Smooth, saturating 0..1 curve: rises quickly at first, then eases toward 1 and
+// never exceeds it — so more memories always add a little, but the tree can never
+// balloon into something grotesque. `k` is the value at which it reaches ~0.63.
+function saturate(x: number, k: number): number {
+  return x <= 0 ? 0 : 1 - Math.exp(-x / k);
+}
+
+// Node kinds that represent an actual remembered moment (as opposed to the
+// tree's structural scaffolding). Total memory volume drives trunk girth and
+// canopy fullness.
+const MEMORY_KINDS_FOR_GROWTH: string[] = [
+  "LEAF", "FLOWER", "FRUIT", "MEMORY_MOMENT", "PHOTO", "MEMORY",
+];
+
+export interface GrowthMetrics {
+  trunkHeight: number;
+  trunkRadiusBottom: number;
+  trunkRadiusTop: number;
+  crownRadius: number;
+  crownCount: number;
+  crownFullness: number;
+  girthScale: number;
+}
+
+/**
+ * The heart of the "grows inward" idea: translate a life's data directly into
+ * the tree's FORM. Everything here is deterministic (same life → same tree) and
+ * cumulative (form only ever grows), and every mapping is constrained so that
+ * any possible tree still reads as a gorgeous, balanced ancient tree.
+ *
+ *   legacy score      → overall height (a life's fullness lifts the whole tree)
+ *   memory volume      → trunk girth + a little extra height (thickening rings)
+ *   memories + themes  → canopy fullness (leaf density) + crown spread
+ *
+ * Trunk girth and crown spread are kept PROPORTIONAL to height, so the tree is
+ * never top-heavy or spindly — the data moves its size and fullness, never its
+ * good proportions.
+ */
+export function computeGrowth(graph: ForestGraph): GrowthMetrics {
+  const counts = graph.counts as Record<string, number>;
+  const memoryCount = MEMORY_KINDS_FOR_GROWTH.reduce((s, k) => s + (counts[k] ?? 0), 0);
+  const branchCount = counts.BRANCH ?? 0;
+  const score = graph.legacyScore;
+
+  // Overall scale climbs with the legacy score, saturating so an enormous life
+  // still tops out as a single grand tree rather than growing without limit.
+  const growth01 = saturate(score, 260); // ~0.14 @40, ~0.62 @250, ~0.90 @600
+  const trunkHeight = 0.4 + 8.1 * growth01;
+
+  // Girth: proportional to height (always gorgeous) plus a subtle thickening
+  // from total memory volume — "every memory adds a ring to the trunk."
+  const girth01 = saturate(memoryCount, 55);
+  const trunkRadiusBottom = trunkHeight * 0.1 + girth01 * 0.08;
+  // 0.7 was the old fully-grown base radius; normalising against it keeps the
+  // hand-tuned branch proportions intact and scales limbs up/down from there.
+  const girthScale = Math.max(0.28, trunkRadiusBottom / 0.7);
+  const trunkRadiusTop = 0.19 * girthScale;
+
+  // Canopy fullness rises with remembered moments and how many life-themes
+  // (branches) the tree carries; a busier life wears a lusher, wider crown.
+  const crownFullness = 0.35 + 0.65 * saturate(memoryCount + branchCount * 4, 70);
+  let crownRadius = trunkHeight * 0.66 + crownFullness * 0.6;
+  let crownCount = Math.round(
+    Math.min(3200, 82 * crownRadius * crownRadius * (0.4 + 0.6 * crownFullness)),
+  );
+  // A true seed (no memories, essentially no score) stays a seed in the soil —
+  // the cinematic birth sequence owns that moment, so no crown yet.
+  if (memoryCount === 0 && score < 12) {
+    crownRadius = 0;
+    crownCount = 0;
+  }
+
+  return {
+    trunkHeight,
+    trunkRadiusBottom,
+    trunkRadiusTop,
+    crownRadius,
+    crownCount,
+    crownFullness,
+    girthScale,
+  };
 }
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-
-// Scaled up dramatically so a mature tree TOWERS over the visitor — the brief
-// asks that the user feel small beneath an enormous ancient trunk. These heights
-// (in world units) are read directly by the renderer and the camera framing.
-const TRUNK_HEIGHT: Record<GrowthStage, number> = {
-  SEED: 0.5,
-  SPROUT: 1.6,
-  SAPLING: 3.0,
-  YOUNG_TREE: 4.6,
-  MATURE_TREE: 6.2,
-  ANCIENT_TREE: 8.0,
-};
 
 // Deterministic 0..1 pseudo-random from a string id so layouts are stable.
 function hash01(id: string, salt = 0): number {
@@ -78,7 +164,9 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
 
   const seed = graph.nodes.find((n) => n.kind === "SEED");
   const trunk = graph.nodes.find((n) => n.kind === "TRUNK");
-  const trunkHeight = TRUNK_HEIGHT[graph.stage];
+  // The tree's dimensions are read continuously from the life itself.
+  const growth = computeGrowth(graph);
+  const trunkHeight = growth.trunkHeight;
 
   const positioned: PositionedNode[] = [];
   const limbs: Limb[] = [];
@@ -187,5 +275,17 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     positioned.push({ node: person, position: pos, scale: 0.34, parentId: seed!.id });
   });
 
-  return { trunkHeight, forkHeight, forks, positioned, limbs };
+  return {
+    trunkHeight,
+    forkHeight,
+    forks,
+    positioned,
+    limbs,
+    trunkRadiusBottom: growth.trunkRadiusBottom,
+    trunkRadiusTop: growth.trunkRadiusTop,
+    crownRadius: growth.crownRadius,
+    crownCount: growth.crownCount,
+    crownFullness: growth.crownFullness,
+    girthScale: growth.girthScale,
+  };
 }

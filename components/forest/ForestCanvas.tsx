@@ -5,7 +5,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, Html, Sky, Environment, Lightformer } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette, SMAA } from "@react-three/postprocessing";
 import * as THREE from "three";
-import type { ForestGraph, ForestNodeDTO, GrowthStage } from "@/lib/forest/types";
+import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { computeLayout, type PositionedNode, type Vec3, type Limb, type Fork, type ForestLayout } from "@/lib/forest/layout";
 
 const COLORS: Record<string, string> = {
@@ -172,21 +172,9 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 const MEMORY_KINDS = new Set(["LEAF", "FLOWER", "FRUIT", "PHOTO", "MEMORY", "MEMORY_MOMENT"]);
 
-// Crown fullness by growth stage: radius + decorative leaf count.
-// Crown radii scale with the taller trunks above so the canopy spreads like a
-// vast umbrella overhead (the "branches like embracing arms" of the brief).
-// Counts bumped a little so the larger crowns stay lush, not sparse.
-const CROWN: Record<GrowthStage, { r: number; count: number }> = {
-  SEED: { r: 0, count: 0 },
-  SPROUT: { r: 0.8, count: 90 },
-  SAPLING: { r: 1.8, count: 360 },
-  YOUNG_TREE: { r: 3.0, count: 900 },
-  MATURE_TREE: { r: 4.2, count: 1700 },
-  ANCIENT_TREE: { r: 5.6, count: 2600 },
-};
-const STAGE_INDEX: Record<GrowthStage, number> = {
-  SEED: 0, SPROUT: 1, SAPLING: 2, YOUNG_TREE: 3, MATURE_TREE: 4, ANCIENT_TREE: 5,
-};
+// Crown spread + leaf count, trunk girth and limb thickness are no longer read
+// from a per-stage table — they're computed continuously from the life's data
+// by computeGrowth() in lib/forest/layout.ts and arrive on the ForestLayout.
 
 function hash01(id: string, salt = 0): number {
   let h = 2166136261 ^ salt;
@@ -513,7 +501,6 @@ interface Props {
 
 export default function ForestCanvas({ graph, selectedId, focusId, onSelect, memorial = false }: Props) {
   const layout = useMemo(() => computeLayout(graph), [graph]);
-  const stageIdx = STAGE_INDEX[graph.stage];
   const atmo = memorial ? MEMORIAL_ATMOSPHERE : DAY_ATMOSPHERE;
 
   const bark = useMemo(makeBarkTexture, []);
@@ -530,7 +517,9 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   const barkTex = useMemo(() => ({ map: barkColor, normal: bark.normal }), [barkColor, bark.normal]);
   const shadowTex = useMemo(makeRadialShadow, []);
 
-  const crown = CROWN[graph.stage];
+  // Crown size + fullness now come straight from the growth grammar (a function
+  // of the life's memories and score), not a fixed per-stage table.
+  const crown = { r: layout.crownRadius, count: layout.crownCount };
   const crownCenter = useMemo<Vec3>(
     () => [0, layout.trunkHeight + crown.r * 0.45, 0],
     [layout.trunkHeight, crown.r],
@@ -646,19 +635,25 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 
       {/* Woody structure: a thick base to the fork height, then the two great
           forks and every branch continue as tapered tubes. */}
-      <Trunk height={layout.forkHeight} stageIdx={stageIdx} bark={barkTex} />
+      <Trunk
+        height={layout.forkHeight}
+        rBottom={layout.trunkRadiusBottom}
+        rTop={layout.trunkRadiusTop}
+        bark={barkTex}
+      />
       {layout.forkHeight > 0 ? (
         <LivingTrunk
           forkHeight={layout.forkHeight}
           forks={layout.forks}
-          baseRadius={0.3 + stageIdx * 0.08}
+          baseRadius={layout.trunkRadiusBottom}
+          topRadius={layout.trunkRadiusTop}
           nightRef={nightRef}
         />
       ) : null}
       {layout.limbs
         .filter((l) => l.kind !== "twig")
         .map((limb, i) => (
-          <Branch key={i} limb={limb} bark={barkTex} />
+          <Branch key={i} limb={limb} girthScale={layout.girthScale} bark={barkTex} />
         ))}
 
       {/* Decorative full canopy. */}
@@ -1058,7 +1053,15 @@ const LIMB_STYLE: Record<Limb["kind"], { rBase: number; rTip: number; bow: numbe
   root: { rBase: 0.06, rTip: 0.018, bow: -0.28 },
 };
 
-function Branch({ limb, bark }: { limb: Limb; bark: { map: THREE.Texture; normal: THREE.Texture } }) {
+function Branch({
+  limb,
+  girthScale = 1,
+  bark,
+}: {
+  limb: Limb;
+  girthScale?: number;
+  bark: { map: THREE.Texture; normal: THREE.Texture };
+}) {
   const style = LIMB_STYLE[limb.kind];
   const geometry = useMemo(() => {
     const a = new THREE.Vector3(...limb.from);
@@ -1067,10 +1070,14 @@ function Branch({ limb, bark }: { limb: Limb; bark: { map: THREE.Texture; normal
     const len = a.distanceTo(b);
     mid.y += len * style.bow;
     const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
-    const geo = new THREE.TubeGeometry(curve, 16, style.rBase, 8, false);
-    taperTube(geo, 16, 8, style.rBase, style.rTip);
+    // Every limb scales with the trunk's girth so branches stay in proportion at
+    // any tree size — fine twigs on a sapling, massive boughs on an ancient tree.
+    const rBase = style.rBase * girthScale;
+    const rTip = style.rTip * girthScale;
+    const geo = new THREE.TubeGeometry(curve, 16, rBase, 8, false);
+    taperTube(geo, 16, 8, rBase, rTip);
     return geo;
-  }, [limb, style]);
+  }, [limb, style, girthScale]);
   // Roots/flares stay dark and mossy (earthbound); woody parts use a light warm
   // tint so the real bark photo shows through.
   const color = limb.kind === "root" ? "#4a3222" : limb.kind === "flare" ? "#5a4a30" : "#b39a7c";
@@ -1109,17 +1116,18 @@ function taperTube(geo: THREE.TubeGeometry, tubularSegments: number, radialSegme
 
 function Trunk({
   height,
-  stageIdx,
+  rBottom,
+  rTop,
   bark,
 }: {
   height: number;
-  stageIdx: number;
+  rBottom: number;
+  rTop: number;
   bark: { map: THREE.Texture; normal: THREE.Texture };
 }) {
-  // Thick, barely-tapering base that flows straight into the two forks (whose
-  // radius starts at ~0.19). Girth grows with the tree's stage.
-  const rBottom = 0.3 + stageIdx * 0.08;
-  const rTop = 0.19;
+  // Thick, barely-tapering base that flows straight into the two forks. Girth
+  // (rBottom) and the radius where it meets the forks (rTop) come from the
+  // growth grammar, so the trunk thickens as a life accumulates memories.
   return (
     <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
       <cylinderGeometry args={[rTop, rBottom, height, 32, 6]} />
@@ -1136,11 +1144,13 @@ function LivingTrunk({
   forkHeight,
   forks,
   baseRadius,
+  topRadius = 0.19,
   nightRef,
 }: {
   forkHeight: number;
   forks: Fork[];
   baseRadius: number;
+  topRadius?: number;
   nightRef?: React.MutableRefObject<number>;
 }) {
   const glowTex = useMemo(makeGlowSprite, []);
@@ -1168,7 +1178,7 @@ function LivingTrunk({
       const SEG = 12;
       for (let s = 0; s <= SEG; s++) {
         const t = s / SEG;
-        const r = (baseRadius * (1 - t) + 0.19 * t) * 1.015;
+        const r = (baseRadius * (1 - t) + topRadius * t) * 1.015;
         const ang = phase + t * 2.4;
         pts.push(new THREE.Vector3(Math.cos(ang) * r, t * forkHeight, Math.sin(ang) * r));
       }
@@ -1185,7 +1195,7 @@ function LivingTrunk({
       geoms.push(new THREE.TubeGeometry(curve, 18, 0.013, 5, false));
     }
     return geoms;
-  }, [forkHeight, forks, baseRadius]);
+  }, [forkHeight, forks, baseRadius, topRadius]);
 
   // Golden particles rising through the trunk column and up toward the forks.
   const COUNT = 44;
