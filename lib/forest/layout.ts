@@ -381,6 +381,9 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     const depth = 0.55 + hash01(person.id, 6) * 1.1;
     const pos: Vec3 = [Math.cos(angle) * r, -depth, Math.sin(angle) * r];
     positioned.push({ node: person, position: pos, scale: 0.34, parentId: seed!.id });
+    // Tie each family member into the root network with a soft root limb so the
+    // name node reads as growing out of the tree's roots, not floating loose.
+    limbs.push({ from: [0, growth.trunkRadiusBottom * 0.2, 0], to: pos, kind: "root" });
   });
 
   return {
