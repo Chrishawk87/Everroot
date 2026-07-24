@@ -635,8 +635,9 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
       <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} nightRef={nightRef} />
 
-      {/* Woody structure. */}
-      <Trunk height={layout.trunkHeight} stageIdx={stageIdx} bark={barkTex} />
+      {/* Woody structure: a thick base to the fork height, then the two great
+          forks and every branch continue as tapered tubes. */}
+      <Trunk height={layout.forkHeight} stageIdx={stageIdx} bark={barkTex} />
       {layout.limbs
         .filter((l) => l.kind !== "twig")
         .map((limb, i) => (
@@ -1030,22 +1031,32 @@ function Canopy({
 
 /* ---------- Woody parts ---------- */
 
+// Radius + tip taper + bow direction per limb kind. Forks are near-trunk thick;
+// flares are the mossy buttress roots; branches and twigs get thinner.
+const LIMB_STYLE: Record<Limb["kind"], { rBase: number; rTip: number; bow: number }> = {
+  fork: { rBase: 0.19, rTip: 0.1, bow: 0.18 },
+  branch: { rBase: 0.1, rTip: 0.028, bow: 0.32 },
+  twig: { rBase: 0.05, rTip: 0.015, bow: 0.32 },
+  flare: { rBase: 0.17, rTip: 0.04, bow: -0.55 },
+  root: { rBase: 0.06, rTip: 0.018, bow: -0.28 },
+};
+
 function Branch({ limb, bark }: { limb: Limb; bark: { map: THREE.Texture; normal: THREE.Texture } }) {
+  const style = LIMB_STYLE[limb.kind];
   const geometry = useMemo(() => {
     const a = new THREE.Vector3(...limb.from);
     const b = new THREE.Vector3(...limb.to);
     const mid = a.clone().add(b).multiplyScalar(0.5);
     const len = a.distanceTo(b);
-    mid.y += len * (limb.kind === "root" ? -0.28 : 0.32);
+    mid.y += len * style.bow;
     const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
-    const radius = limb.kind === "root" ? 0.06 : 0.09;
-    const geo = new THREE.TubeGeometry(curve, 16, radius, 8, false);
-    taperTube(geo, 16, 8, radius, radius * 0.3);
+    const geo = new THREE.TubeGeometry(curve, 16, style.rBase, 8, false);
+    taperTube(geo, 16, 8, style.rBase, style.rTip);
     return geo;
-  }, [limb]);
-  // Roots stay dark (underground); branches use a light warm tint so the real
-  // bark photo shows through instead of being crushed by a brown multiply.
-  const color = limb.kind === "root" ? "#4a3222" : "#b39a7c";
+  }, [limb, style]);
+  // Roots/flares stay dark and mossy (earthbound); woody parts use a light warm
+  // tint so the real bark photo shows through.
+  const color = limb.kind === "root" ? "#4a3222" : limb.kind === "flare" ? "#5a4a30" : "#b39a7c";
   return (
     <mesh geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial color={color} map={bark.map} normalMap={bark.normal} normalScale={BARK_NORMAL_SCALE} roughness={0.92} />
@@ -1088,8 +1099,10 @@ function Trunk({
   stageIdx: number;
   bark: { map: THREE.Texture; normal: THREE.Texture };
 }) {
-  const rBottom = 0.18 + stageIdx * 0.07;
-  const rTop = rBottom * 0.45;
+  // Thick, barely-tapering base that flows straight into the two forks (whose
+  // radius starts at ~0.19). Girth grows with the tree's stage.
+  const rBottom = 0.3 + stageIdx * 0.08;
+  const rTop = 0.19;
   return (
     <mesh position={[0, height / 2, 0]} castShadow receiveShadow>
       <cylinderGeometry args={[rTop, rBottom, height, 32, 6]} />

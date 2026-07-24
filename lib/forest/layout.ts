@@ -13,11 +13,20 @@ export interface PositionedNode {
 export interface Limb {
   from: Vec3;
   to: Vec3;
-  kind: "branch" | "twig" | "root";
+  kind: "branch" | "twig" | "root" | "fork" | "flare";
+}
+
+export interface Fork {
+  base: Vec3;
+  tip: Vec3;
 }
 
 export interface ForestLayout {
   trunkHeight: number;
+  /** Height up the trunk where it splits into two main forks. */
+  forkHeight: number;
+  /** The two great forks the concept tree splits into. */
+  forks: Fork[];
   positioned: PositionedNode[];
   limbs: Limb[];
 }
@@ -75,22 +84,58 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
   if (seed) positioned.push({ node: seed, position: [0, 0.1, 0], scale: 0.35, parentId: null });
   if (trunk) positioned.push({ node: trunk, position: [0, trunkHeight * 0.5, 0], scale: 1, parentId: seed?.id ?? null });
 
-  // Branches spiral up the trunk and reach outward.
+  // ---- The two great forks ----
+  // Like the concept tree, the trunk rises a short way then splits into two
+  // massive forks that lean out and up. Every branch is hung off one of these
+  // forks (not the central pole), which is what gives the wide, spreading
+  // silhouette. The gap between the forks is where the low sun burns through.
+  const H = trunkHeight;
+  const forkHeight = H * 0.34;
+  const forkBase: Vec3 = [0, forkHeight, 0];
+  const forks: Fork[] = [
+    { base: forkBase, tip: [H * 0.42, H * 0.9, H * 0.07] },
+    { base: forkBase, tip: [-H * 0.44, H * 0.88, -H * 0.06] },
+  ];
+  for (const f of forks) limbs.push({ from: f.base, to: f.tip, kind: "fork" });
+
+  // ---- Above-ground root flare ----
+  // Thick buttress roots spread from the base of the trunk and dive into the
+  // earth, the mossy flare that anchors the concept tree to the ground.
+  const FLARES = 6;
+  for (let i = 0; i < FLARES; i++) {
+    const a = (i / FLARES) * Math.PI * 2 + 0.3;
+    const spread = 1.2 + hash01(`flare${i}`, 3) * 0.9;
+    limbs.push({
+      from: [Math.cos(a) * 0.12, forkHeight * 0.5, Math.sin(a) * 0.12],
+      to: [Math.cos(a) * spread, -0.18 - hash01(`flare${i}`, 7) * 0.2, Math.sin(a) * spread],
+      kind: "flare",
+    });
+  }
+
+  // Branches hang off the two forks and reach outward, wide and low, building a
+  // broad umbrella crown.
   const branches = trunk ? childrenOf.get(trunk.id)?.filter((c) => c.kind === "BRANCH") ?? [] : [];
   const branchTip = new Map<string, Vec3>();
 
   branches.forEach((branch, i) => {
+    const fork = forks[i % forks.length];
+    // Origin somewhere along the upper half of the chosen fork.
+    const along = 0.55 + hash01(branch.id, 17) * 0.4;
+    const base: Vec3 = [
+      fork.base[0] + (fork.tip[0] - fork.base[0]) * along,
+      fork.base[1] + (fork.tip[1] - fork.base[1]) * along,
+      fork.base[2] + (fork.tip[2] - fork.base[2]) * along,
+    ];
+    // Reach outward roughly in the fork's direction, spread around it, mostly
+    // horizontal with a gentle upward lift.
     const angle = i * GOLDEN_ANGLE + hash01(branch.id) * 0.6;
-    const heightFrac = 0.45 + (branches.length > 1 ? (i / branches.length) * 0.5 : 0.2);
-    const baseY = trunkHeight * heightFrac;
-    const length = 1.0 + hash01(branch.id, 7) * 0.8;
-    const lift = 0.4 + hash01(branch.id, 13) * 0.5;
-
-    const base: Vec3 = [0, baseY, 0];
+    const length = 1.5 + hash01(branch.id, 7) * 1.3;
+    const lift = 0.2 + hash01(branch.id, 13) * 0.45;
+    const outX = Math.sign(fork.tip[0]) || 1;
     const tip: Vec3 = [
-      Math.cos(angle) * length,
-      baseY + lift,
-      Math.sin(angle) * length,
+      base[0] + Math.cos(angle) * length * 0.7 + outX * length * 0.5,
+      base[1] + lift,
+      base[2] + Math.sin(angle) * length,
     ];
     branchTip.set(branch.id, tip);
     positioned.push({ node: branch, position: tip, scale: 0.5, parentId: trunk!.id });
@@ -139,5 +184,5 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     positioned.push({ node: person, position: pos, scale: 0.34, parentId: seed!.id });
   });
 
-  return { trunkHeight, positioned, limbs };
+  return { trunkHeight, forkHeight, forks, positioned, limbs };
 }
