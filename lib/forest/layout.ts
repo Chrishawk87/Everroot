@@ -60,6 +60,13 @@ const MEMORY_KINDS_FOR_GROWTH: string[] = [
   "LEAF", "FLOWER", "FRUIT", "MEMORY_MOMENT", "PHOTO", "MEMORY",
 ];
 
+// The seven life epochs, in the order a life is lived. A branch's position in
+// this sequence decides where its chapter hangs on the tree, so the crown reads
+// chronologically — the earliest years to one side, the latest to the other.
+const EPOCH_ORDER: string[] = [
+  "ROOTS", "FIRST_STEPS", "CROSSROADS", "ANCHORS", "STORMS", "HARVEST", "HORIZONS",
+];
+
 export interface GrowthMetrics {
   trunkHeight: number;
   trunkRadiusBottom: number;
@@ -203,13 +210,56 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     });
   }
 
+  // ---- Epoch density: how full each chapter of a life is ----
+  // Every remembered moment is tallied under its life-epoch. The busiest chapter
+  // becomes the reference (1.0) and quieter chapters reach proportionally less.
+  // This is what turns the crown into a readable fingerprint: a life heavy in
+  // "Harvest" wears its weight differently from one heavy in "First Steps".
+  const epochMemoryCount = new Map<string, number>();
+  for (const n of graph.nodes) {
+    if (!MEMORY_KINDS_FOR_GROWTH.includes(n.kind) || !n.epoch) continue;
+    epochMemoryCount.set(n.epoch, (epochMemoryCount.get(n.epoch) ?? 0) + 1);
+  }
+  const maxEpochMemories = Math.max(1, ...epochMemoryCount.values());
+
+  // Which chapter of life a branch belongs to: prefer its own epoch, else the
+  // plurality epoch of the memories hanging from it, so a branch always sits
+  // where its stories actually live. Null when nothing says otherwise.
+  const branchEpoch = (branch: ForestNodeDTO, foliage: ForestNodeDTO[]): string | null => {
+    if (branch.epoch) return branch.epoch;
+    const tally = new Map<string, number>();
+    for (const f of foliage) if (f.epoch) tally.set(f.epoch, (tally.get(f.epoch) ?? 0) + 1);
+    let best: string | null = null;
+    let bestN = 0;
+    for (const [e, n] of tally) if (n > bestN) { best = e; bestN = n; }
+    return best;
+  };
+
   // Branches hang off the two forks and reach outward, wide and low, building a
-  // broad umbrella crown.
+  // broad umbrella crown. Their reach and side are read from the life itself:
+  // chronology decides which fork (early years to one side, later to the other)
+  // and the chapter's density decides how far the bough reaches and how heavy
+  // its foliage — all clamped so the tree never loses its balance.
   const branches = trunk ? childrenOf.get(trunk.id)?.filter((c) => c.kind === "BRANCH") ?? [] : [];
   const branchTip = new Map<string, Vec3>();
 
   branches.forEach((branch, i) => {
-    const fork = forks[i % forks.length];
+    const foliage = childrenOf.get(branch.id) ?? [];
+    const epoch = branchEpoch(branch, foliage);
+    const epochIdx = epoch ? EPOCH_ORDER.indexOf(epoch) : -1;
+
+    // Chapter density, 0..1 (neutral 0.5 when the epoch is unknown). It nudges
+    // reach and lift within tight bounds so a lopsided life still reads as a
+    // gorgeous, balanced tree — the signal is legible, never distorting.
+    const density = epoch ? (epochMemoryCount.get(epoch) ?? 0) / maxEpochMemories : 0.5;
+    const reachMul = 0.82 + 0.34 * density; // 0.82 .. 1.16
+
+    // Chronology chooses the great fork (and thus the side): earliest chapters
+    // to one side, latest to the other, so the crown reads like a life told
+    // left to right. Unknown epochs alternate so they still spread evenly.
+    const chronoT = epochIdx >= 0 ? epochIdx / (EPOCH_ORDER.length - 1) : (i % 2);
+    const fork = forks[chronoT < 0.5 ? 1 : 0];
+
     // Origin somewhere along the upper half of the chosen fork.
     const along = 0.55 + hash01(branch.id, 17) * 0.4;
     const base: Vec3 = [
@@ -220,8 +270,8 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     // Reach outward roughly in the fork's direction, spread around it, mostly
     // horizontal with a gentle upward lift.
     const angle = i * GOLDEN_ANGLE + hash01(branch.id) * 0.6;
-    const length = 1.5 + hash01(branch.id, 7) * 1.3;
-    const lift = 0.2 + hash01(branch.id, 13) * 0.45;
+    const length = (1.5 + hash01(branch.id, 7) * 1.3) * reachMul;
+    const lift = (0.2 + hash01(branch.id, 13) * 0.45) * (0.85 + 0.3 * density);
     const outX = Math.sign(fork.tip[0]) || 1;
     const tip: Vec3 = [
       base[0] + Math.cos(angle) * length * 0.7 + outX * length * 0.5,
@@ -232,11 +282,12 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     positioned.push({ node: branch, position: tip, scale: 0.5, parentId: trunk!.id });
     limbs.push({ from: base, to: tip, kind: "branch" });
 
-    // Leaves / flowers / fruit cluster around the branch tip.
-    const foliage = childrenOf.get(branch.id) ?? [];
+    // Leaves / flowers / fruit cluster around the branch tip; a fuller chapter
+    // wears a slightly wider, richer cluster.
+    const foliageSpread = 0.9 + 0.25 * density;
     foliage.forEach((leaf, j) => {
       const a = j * GOLDEN_ANGLE + hash01(leaf.id) * Math.PI * 2;
-      const r = 0.25 + hash01(leaf.id, 3) * 0.35;
+      const r = (0.25 + hash01(leaf.id, 3) * 0.35) * foliageSpread;
       const pos: Vec3 = [
         tip[0] + Math.cos(a) * r,
         tip[1] + (hash01(leaf.id, 5) - 0.4) * 0.5,
