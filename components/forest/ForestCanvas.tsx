@@ -1057,7 +1057,7 @@ const LIMB_STYLE: Record<Limb["kind"], { rBase: number; rTip: number; bow: numbe
   sub: { rBase: 0.052, rTip: 0.016, bow: 0.42 },
   twig: { rBase: 0.05, rTip: 0.015, bow: 0.32 },
   flare: { rBase: 0.17, rTip: 0.04, bow: -0.55 },
-  root: { rBase: 0.06, rTip: 0.018, bow: -0.28 },
+  root: { rBase: 0.09, rTip: 0.026, bow: -0.28 },
 };
 
 function Branch({
@@ -1087,7 +1087,7 @@ function Branch({
   }, [limb, style, girthScale]);
   // Roots/flares stay dark and mossy (earthbound); woody parts use a light warm
   // tint so the real bark photo shows through.
-  const color = limb.kind === "root" ? "#4a3222" : limb.kind === "flare" ? "#5a4a30" : "#b39a7c";
+  const color = limb.kind === "root" ? "#5c3d26" : limb.kind === "flare" ? "#5a4a30" : "#b39a7c";
   return (
     <mesh geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial color={color} map={bark.map} normalMap={bark.normal} normalScale={BARK_NORMAL_SCALE} roughness={0.92} />
@@ -1270,6 +1270,15 @@ function Ground({ grass, normal }: { grass: THREE.Texture; normal: THREE.CanvasT
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2.4, 0]}>
         <circleGeometry args={[60, 64]} />
         <meshStandardMaterial color="#241a12" roughness={1} />
+      </mesh>
+      {/* Soil ceiling — the opaque underside of the earth. Its normal faces down
+          and it's FrontSide only, so it renders solid when the camera is BELOW
+          it (swallowing the sky and the undersides of the grass for a real
+          buried-in-earth feel) yet is culled from above, leaving the top-down
+          view see-through to the roots. */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
+        <circleGeometry args={[60, 64]} />
+        <meshStandardMaterial color="#1a0f07" roughness={1} side={THREE.FrontSide} />
       </mesh>
       {/* Grass surface — slightly see-through so the glowing roots beneath show
           faintly, like roots through soil at dusk. Drawn without depth-write so
@@ -1476,6 +1485,11 @@ function Motes({
 // lights, sky, fog and background in place — no React state, so it's cheap.
 // When disabled (memorial forests) it simply holds a gentle dusk night factor
 // so the constellations stay faintly visible.
+// Warm, near-black soil tones the world lerps toward as the camera dips
+// underground, so tilting beneath the surface feels like being inside the earth.
+const EARTH_FOG = new THREE.Color("#160c05");
+const EARTH_BG = new THREE.Color("#1c1008");
+
 function SceneClock({
   enabled,
   nightRef,
@@ -1494,7 +1508,7 @@ function SceneClock({
   const { scene } = useThree();
   const lerp = THREE.MathUtils.lerp;
 
-  useFrame(() => {
+  useFrame((state) => {
     if (!enabled) {
       nightRef.current = 0.6;
       return;
@@ -1543,6 +1557,22 @@ function SceneClock({
       skyMat.uniforms.mieCoefficient.value = lerp(k0.sky.mieCoefficient, k1.sky.mieCoefficient, t);
       skyMat.uniforms.mieDirectionalG.value = lerp(k0.sky.mieDirectionalG, k1.sky.mieDirectionalG, t);
       (skyMat.uniforms.sunPosition.value as THREE.Vector3).set(sx, sy, sz);
+    }
+
+    // Underground: as the camera dips below the surface, bury the world in warm
+    // dark earth — the horizon and sky fade to soil so it feels like being *in*
+    // the ground, not floating under a glass floor.
+    const buried = THREE.MathUtils.clamp(-state.camera.position.y / 3, 0, 1);
+    if (buried > 0.001) {
+      if (scene.background instanceof THREE.Color) scene.background.lerp(EARTH_BG, buried);
+      if (scene.fog instanceof THREE.Fog) {
+        scene.fog.color.lerp(EARTH_FOG, buried);
+        scene.fog.near = lerp(scene.fog.near, 0.5, buried);
+        scene.fog.far = lerp(scene.fog.far, 18, buried);
+      }
+      if (ambientRef.current) {
+        ambientRef.current.intensity = lerp(ambientRef.current.intensity, 0.4, buried * 0.85);
+      }
     }
   });
 
@@ -1773,20 +1803,32 @@ function NodeGlyph({
       const cam = state.camera;
       ref.current.getWorldPosition(_lblWorld);
       const dist = cam.position.distanceTo(_lblWorld);
-      cam.getWorldDirection(_lblCamDir);
-      _lblToNode.copy(_lblWorld).sub(cam.position).normalize();
-      const aim = _lblCamDir.dot(_lblToNode); // 1 = dead center of view
-      // Fade in only within ~9° of the view center and inside a soft distance
-      // band; multiply the two so edge-of-view or far titles vanish smoothly.
-      const aimF = THREE.MathUtils.clamp((aim - 0.988) / (1 - 0.988), 0, 1);
-      const distF = THREE.MathUtils.clamp(1 - (dist - 6) / 14, 0, 1);
-      const op = aimF * distF * 0.72;
-      labelRef.current.style.opacity = op.toFixed(3);
+      if (node.kind === "PERSON" || node.kind === "ROOT") {
+        // Family & heritage names surface as the camera dips underground, so
+        // tilting beneath the tree reveals who is rooted there — no aim gate, so
+        // the whole family reads at once, just fading with the descent + distance.
+        const buried = THREE.MathUtils.clamp(-cam.position.y / 1.5, 0, 1);
+        const distF = THREE.MathUtils.clamp(1 - (dist - 4) / 13, 0, 1);
+        labelRef.current.style.opacity = (buried * distF * 0.92).toFixed(3);
+      } else {
+        cam.getWorldDirection(_lblCamDir);
+        _lblToNode.copy(_lblWorld).sub(cam.position).normalize();
+        const aim = _lblCamDir.dot(_lblToNode); // 1 = dead center of view
+        // Fade in only within ~9° of the view center and inside a soft distance
+        // band; multiply the two so edge-of-view or far titles vanish smoothly.
+        const aimF = THREE.MathUtils.clamp((aim - 0.988) / (1 - 0.988), 0, 1);
+        const distF = THREE.MathUtils.clamp(1 - (dist - 6) / 14, 0, 1);
+        const op = aimF * distF * 0.72;
+        labelRef.current.style.opacity = op.toFixed(3);
+      }
     }
   });
 
   const color = overrideColor ?? COLORS[node.kind] ?? "#9ad0b0";
   const isMemory = MEMORY_KINDS.has(node.kind);
+  // Family (PERSON) and heritage (ROOT) live underground; their names surface
+  // when the camera tilts below the earth, so they carry a persistent label too.
+  const isRootWorld = node.kind === "PERSON" || node.kind === "ROOT";
   const year = useMemo(() => {
     const d = new Date(node.createdAt);
     return Number.isNaN(d.getTime()) ? null : d.getFullYear();
@@ -1830,7 +1872,7 @@ function NodeGlyph({
             {year ? <span className="text-parchment/50"> · {year}</span> : null}
           </div>
         </Html>
-      ) : isMemory ? (
+      ) : isMemory || isRootWorld ? (
         <Html center distanceFactor={15} position={[0, scale + 0.5, 0]} zIndexRange={[10, 0]}>
           <div
             ref={labelRef}
@@ -1920,38 +1962,61 @@ function Geometry({
         </mesh>
       );
     case "PERSON":
-      // A family member: a glowing node in the underground root network — the
-      // seed of their own tree, waiting to grow.
+      // A family member: a luminous seed-orb nested in the roots — the seed of
+      // their own tree, waiting to grow. Three layers give it depth: a glowing
+      // core, an inner light shell, and a soft outer halo that reads through soil.
       return (
         <group>
           <mesh>
-            <sphereGeometry args={[scale, 18, 18]} />
+            <sphereGeometry args={[scale, 20, 20]} />
             <meshStandardMaterial
               color={color}
-              roughness={0.35}
+              roughness={0.28}
               emissive={emissive}
-              emissiveIntensity={glow ? 1.0 : 0.75}
+              emissiveIntensity={glow ? 1.5 : 1.15}
+              toneMapped={false}
             />
           </mesh>
-          {/* Soft halo so the node reads through the soil. */}
+          {/* Inner light shell. */}
           <mesh>
-            <sphereGeometry args={[scale * 1.7, 16, 16]} />
+            <sphereGeometry args={[scale * 1.28, 18, 18]} />
             <meshBasicMaterial
               color={color}
               transparent
-              opacity={0.16}
+              opacity={0.3}
               blending={THREE.AdditiveBlending}
               depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+          {/* Soft outer halo so the node glows through the soil. */}
+          <mesh>
+            <sphereGeometry args={[scale * 2.0, 16, 16]} />
+            <meshBasicMaterial
+              color={color}
+              transparent
+              opacity={0.12}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
             />
           </mesh>
         </group>
       );
     case "ROOT":
+      // Heritage: a warm ember of ancestry among the roots. Gently glowing so it
+      // reads as living history, with a soft halo through the soil.
       return (
-        <mesh>
-          <sphereGeometry args={[scale, 12, 12]} />
-          <meshStandardMaterial color={color} roughness={0.6} emissive={emissive} emissiveIntensity={baseGlow} />
-        </mesh>
+        <group>
+          <mesh>
+            <sphereGeometry args={[scale, 16, 16]} />
+            <meshStandardMaterial color={color} roughness={0.5} emissive={emissive} emissiveIntensity={0.7} />
+          </mesh>
+          <mesh>
+            <sphereGeometry args={[scale * 1.7, 14, 14]} />
+            <meshBasicMaterial color={color} transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
+          </mesh>
+        </group>
       );
     default:
       // Every other memory kind reads as a glowing leaf — no diamonds.
