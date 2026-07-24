@@ -537,6 +537,25 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     [layout.trunkHeight, layout.crownLean],
   );
 
+  // Foliage grows from the boughs, not the air: sample points along the outer
+  // half of every branch and secondary bough, and the canopy clumps its leaves
+  // around these. This is what makes leaves read as attached to the tree.
+  const leafAnchors = useMemo<Vec3[]>(() => {
+    const pts: Vec3[] = [];
+    for (const l of layout.limbs) {
+      if (l.kind !== "branch" && l.kind !== "sub") continue;
+      const samples = l.kind === "branch" ? [0.5, 0.66, 0.8, 0.92, 1.0] : [0.6, 0.82, 1.0];
+      for (const t of samples) {
+        pts.push([
+          l.from[0] + (l.to[0] - l.from[0]) * t,
+          l.from[1] + (l.to[1] - l.from[1]) * t,
+          l.from[2] + (l.to[2] - l.from[2]) * t,
+        ]);
+      }
+    }
+    return pts;
+  }, [layout.limbs]);
+
   const focusPos = useMemo<Vec3 | null>(() => {
     if (!focusId) return null;
     const p = layout.positioned.find((n) => n.node.id === focusId);
@@ -638,7 +657,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         <Lightformer intensity={0.35} color="#3d5230" position={[0, -6, 0]} scale={[14, 14, 1]} rotation={[Math.PI / 2, 0, 0]} />
       </Environment>
 
-      <Hills />
+      <MountainRange />
+      <RollingHills grass={grass} />
+      <DistantTrees />
+      <Lake nightRef={nightRef} />
       <SkyClouds />
       <Ground grass={groundColor} normal={groundNormal} />
       <GrassField />
@@ -678,7 +700,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 
       {/* Decorative full canopy. */}
       {crown.count > 0 ? (
-        <Canopy center={crownCenter} radius={crown.r} count={crown.count} leafTex={leafTex} />
+        <Canopy center={crownCenter} radius={crown.r} count={crown.count} leafTex={leafTex} anchors={leafAnchors} />
       ) : null}
 
       {/* Golden twinkling memory-lights scattered through the crown. */}
@@ -975,17 +997,22 @@ function Canopy({
   radius,
   count,
   leafTex,
+  anchors,
 }: {
   center: Vec3;
   radius: number;
   count: number;
   leafTex: THREE.CanvasTexture;
+  /** Points along the real boughs where foliage grows. When present, leaves
+   *  cluster on these instead of floating in a sphere. */
+  anchors?: Vec3[];
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const matRef = useRef<THREE.MeshStandardMaterial>(null);
   const shaderRef = useRef<{ uniforms: { uTime: { value: number } } } | null>(null);
 
-  // Lumpy crown: a handful of sub-cluster centers so the silhouette isn't a perfect ball.
+  // Lumpy crown fallback: a handful of sub-cluster centers so the silhouette
+  // isn't a perfect ball (only used when there are no bough anchors).
   const clusters = useMemo(() => {
     const out: Vec3[] = [];
     const n = 7;
@@ -1002,17 +1029,32 @@ function Canopy({
     if (!mesh) return;
     const dummy = new THREE.Object3D();
     const color = new THREE.Color();
+    const useAnchors = !!anchors && anchors.length > 0;
+    // Tight foliage clumps that hug the boughs, scaled to the tree's size.
+    const clumpR = THREE.MathUtils.clamp(radius * 0.16, 0.35, 1.1);
     for (let i = 0; i < count; i++) {
-      const c = clusters[i % clusters.length];
       const u = Math.random();
       const v = Math.random();
       const theta = u * Math.PI * 2;
       const phi = Math.acos(2 * v - 1);
-      const rr = radius * (0.4 + Math.random() * 0.55);
-      const px = center[0] + c[0] + Math.sin(phi) * Math.cos(theta) * rr;
-      // Squash vertically into a broad, drooping dome that sits over the boughs.
-      const py = center[1] + c[1] + Math.cos(phi) * rr * 0.6;
-      const pz = center[2] + c[2] + Math.sin(phi) * Math.sin(theta) * rr;
+      let px: number;
+      let py: number;
+      let pz: number;
+      if (useAnchors) {
+        // Anchor each leaf to a point on a real bough, then scatter it a little
+        // around that point — so foliage grows FROM the branch, never floats.
+        const a = anchors![Math.floor(Math.random() * anchors!.length)];
+        const rr = clumpR * (0.3 + Math.random() * 0.9);
+        px = a[0] + Math.sin(phi) * Math.cos(theta) * rr;
+        py = a[1] + Math.cos(phi) * rr * 0.8 - rr * 0.15; // gentle downward droop
+        pz = a[2] + Math.sin(phi) * Math.sin(theta) * rr;
+      } else {
+        const c = clusters[i % clusters.length];
+        const rr = radius * (0.4 + Math.random() * 0.55);
+        px = center[0] + c[0] + Math.sin(phi) * Math.cos(theta) * rr;
+        py = center[1] + c[1] + Math.cos(phi) * rr * 0.6;
+        pz = center[2] + c[2] + Math.sin(phi) * Math.sin(theta) * rr;
+      }
       dummy.position.set(px, py, pz);
       dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
       dummy.scale.setScalar(0.24 + Math.random() * 0.2);
@@ -1026,7 +1068,7 @@ function Canopy({
     }
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [count, radius, center, clusters]);
+  }, [count, radius, center, clusters, anchors]);
 
   useLayoutEffect(() => {
     const mat = matRef.current;
@@ -1502,17 +1544,87 @@ function CanopySparkles({
   );
 }
 
-function Hills() {
+// A craggy low-poly mountain with a height-graded vertex color (dark forested
+// base → green shoulders → pale hazy/snow crest), so distant peaks read with
+// real relief and texture instead of as flat blobs. Jitter is deterministic.
+function makeMountainGeo(seed: string): THREE.BufferGeometry {
+  const geo = new THREE.ConeGeometry(1, 1, 8, 4);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const colors = new Float32Array(pos.count * 3);
+  const base = new THREE.Color("#38452f");
+  const mid = new THREE.Color("#586b47");
+  const crest = new THREE.Color("#cdd4c4");
+  const col = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    let x = pos.getX(i);
+    const y = pos.getY(i);
+    let z = pos.getZ(i);
+    const h = THREE.MathUtils.clamp(y + 0.5, 0, 1); // 0 base .. 1 crest
+    // Craggier toward the base; keep the summit tight.
+    x += (hash01(seed + i, 13) - 0.5) * 0.28 * (1 - h);
+    z += (hash01(seed + i, 29) - 0.5) * 0.28 * (1 - h);
+    pos.setXYZ(i, x, y, z);
+    if (h < 0.62) col.copy(base).lerp(mid, h / 0.62);
+    else col.copy(mid).lerp(crest, (h - 0.62) / 0.38);
+    colors[i * 3] = col.r;
+    colors[i * 3 + 1] = col.g;
+    colors[i * 3 + 2] = col.b;
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+// A ring of forested mountains far beyond the meadow. Peaks cluster into a few
+// ridgelines (rather than an even fence), and fog gives them natural aerial
+// haze so they recede into the sky.
+function MountainRange() {
+  const peaks = useMemo(() => {
+    const out: { pos: Vec3; scale: Vec3; geo: THREE.BufferGeometry }[] = [];
+    const ridges = 6;
+    let idx = 0;
+    for (let rdg = 0; rdg < ridges; rdg++) {
+      const centerA = (rdg / ridges) * Math.PI * 2 + hash01(`ridge${rdg}`, 3) * 0.4;
+      const peaksInRidge = 3 + Math.round(hash01(`ridge${rdg}`, 8) * 3);
+      for (let p = 0; p < peaksInRidge; p++) {
+        const a = centerA + (p - peaksInRidge / 2) * 0.09;
+        const r = 66 + hash01(`m${idx}`, 7) * 26;
+        const w = 16 + hash01(`m${idx}`, 11) * 20;
+        const h = 16 + hash01(`m${idx}`, 5) * 26;
+        out.push({
+          pos: [Math.cos(a) * r, -2.5, Math.sin(a) * r],
+          scale: [w, h, w],
+          geo: makeMountainGeo(`m${idx}`),
+        });
+        idx++;
+      }
+    }
+    return out;
+  }, []);
+  return (
+    <group>
+      {peaks.map((m, i) => (
+        <mesh key={i} position={m.pos} scale={m.scale} geometry={m.geo}>
+          <meshStandardMaterial vertexColors roughness={1} flatShading />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// Nearer rolling hills that ring the meadow — smooth, grassy, varied greens —
+// bridging the flat meadow and the distant peaks.
+function RollingHills({ grass }: { grass: THREE.Texture }) {
   const hills = useMemo(() => {
     const out: { pos: Vec3; scale: Vec3; color: string }[] = [];
-    const count = 14;
+    const count = 18;
     for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + hash01(`h${i}`, 3) * 0.3;
-      const r = 36 + hash01(`h${i}`, 7) * 14;
-      const w = 12 + hash01(`h${i}`, 11) * 14;
-      const h = 3 + hash01(`h${i}`, 5) * 6;
-      const c = new THREE.Color().setHSL(0.28, 0.34, 0.28 + hash01(`h${i}`, 9) * 0.12);
-      out.push({ pos: [Math.cos(a) * r, -1.5, Math.sin(a) * r], scale: [w, h, w], color: `#${c.getHexString()}` });
+      const a = (i / count) * Math.PI * 2 + hash01(`h${i}`, 3) * 0.35;
+      const r = 34 + hash01(`h${i}`, 7) * 16;
+      const w = 13 + hash01(`h${i}`, 11) * 16;
+      const h = 4 + hash01(`h${i}`, 5) * 7;
+      const c = new THREE.Color().setHSL(0.27 + hash01(`h${i}`, 13) * 0.03, 0.38, 0.3 + hash01(`h${i}`, 9) * 0.12);
+      out.push({ pos: [Math.cos(a) * r, -2.2, Math.sin(a) * r], scale: [w, h, w], color: `#${c.getHexString()}` });
     }
     return out;
   }, []);
@@ -1520,10 +1632,150 @@ function Hills() {
     <group>
       {hills.map((hill, i) => (
         <mesh key={i} position={hill.pos} scale={hill.scale}>
-          <sphereGeometry args={[1, 12, 8]} />
-          <meshStandardMaterial color={hill.color} roughness={1} flatShading />
+          <sphereGeometry args={[1, 20, 16]} />
+          <meshStandardMaterial map={grass} color={hill.color} roughness={1} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+// A still meadow lake off to one side — a gently rippling reflective surface
+// that catches the golden sky, with a soft shoreline and a thread of waterfall
+// tumbling from the hills into it. Makes the meadow read as a living place.
+function Lake({ nightRef }: { nightRef: React.MutableRefObject<number> }) {
+  const CENTER: Vec3 = [-24, 0, 20];
+  const R = 9;
+  const waterRef = useRef<THREE.Mesh>(null);
+  const fallRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  const mistRef = useRef<THREE.Points>(null);
+
+  // Falling-water mist at the base of the cascade.
+  const mist = useMemo(() => {
+    const n = 40;
+    const positions = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      positions[i * 3] = CENTER[0] + 6 + (Math.random() - 0.5) * 1.6;
+      positions[i * 3 + 1] = Math.random() * 2.2;
+      positions[i * 3 + 2] = CENTER[2] - 5 + (Math.random() - 0.5) * 1.6;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    return g;
+  }, []);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (waterRef.current) {
+      // A very gentle breathing tilt so the surface shimmers rather than sits dead flat.
+      waterRef.current.rotation.z = -Math.PI / 2 + Math.sin(t * 0.3) * 0.006;
+    }
+    if (fallRef.current) {
+      fallRef.current.opacity = 0.5 + Math.sin(t * 3) * 0.12;
+    }
+    if (mistRef.current) {
+      const p = mistRef.current.geometry.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < p.count; i++) {
+        let y = p.getY(i) - 0.02;
+        if (y < 0) y = 2.2;
+        p.setY(i, y);
+      }
+      p.needsUpdate = true;
+    }
+  });
+
+  return (
+    <group>
+      {/* Water surface — low roughness so it mirrors the sky from the scene's
+          environment map; deep teal tint, faintly transparent at the edges. */}
+      <mesh ref={waterRef} rotation={[-Math.PI / 2, 0, 0]} position={[CENTER[0], 0.02, CENTER[2]]}>
+        <circleGeometry args={[R, 64]} />
+        <meshStandardMaterial
+          color="#2c5a63"
+          roughness={0.08}
+          metalness={0.5}
+          transparent
+          opacity={0.9}
+          envMapIntensity={1.2}
+        />
+      </mesh>
+      {/* Damp shoreline ring. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[CENTER[0], 0.01, CENTER[2]]}>
+        <ringGeometry args={[R, R + 1.4, 64]} />
+        <meshStandardMaterial color="#5a4a34" roughness={1} transparent opacity={0.7} depthWrite={false} />
+      </mesh>
+      {/* Waterfall — a thin bright sheet tumbling from a hill into the lake. */}
+      <mesh position={[CENTER[0] + 6, 2.4, CENTER[2] - 5]} rotation={[0.12, 0.5, 0]}>
+        <planeGeometry args={[1.2, 5]} />
+        <meshBasicMaterial ref={fallRef} color="#dfeef2" transparent opacity={0.55} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      {/* Mist at the foot of the falls. */}
+      <points ref={mistRef} geometry={mist}>
+        <pointsMaterial color="#eaf3f5" size={0.5} transparent opacity={0.35} depthWrite={false} sizeAttenuation />
+      </points>
+    </group>
+  );
+}
+
+// A community of other trees dotting the hills — the meadow is a forest, not a
+// lone tree in a void. Two instanced meshes (trunks + canopies) share one set
+// of scattered positions; fog fades the far ones into the hills.
+function DistantTrees() {
+  const trunkRef = useRef<THREE.InstancedMesh>(null);
+  const canopyRef = useRef<THREE.InstancedMesh>(null);
+  const COUNT = 70;
+  const trees = useMemo(() => {
+    const out: { pos: Vec3; h: number; spread: number; hue: number }[] = [];
+    for (let i = 0; i < COUNT; i++) {
+      const a = hash01(`t${i}`, 3) * Math.PI * 2;
+      const r = 22 + hash01(`t${i}`, 7) * 34; // beyond the meadow, across the hills
+      const h = 2.4 + hash01(`t${i}`, 5) * 4.5;
+      out.push({
+        pos: [Math.cos(a) * r, -1.8, Math.sin(a) * r],
+        h,
+        spread: 1.1 + hash01(`t${i}`, 11) * 1.3,
+        hue: 0.26 + hash01(`t${i}`, 13) * 0.05,
+      });
+    }
+    return out;
+  }, []);
+
+  useLayoutEffect(() => {
+    const trunk = trunkRef.current;
+    const canopy = canopyRef.current;
+    if (!trunk || !canopy) return;
+    const d = new THREE.Object3D();
+    const col = new THREE.Color();
+    trees.forEach((tr, i) => {
+      // Trunk
+      d.position.set(tr.pos[0], tr.pos[1] + tr.h * 0.4, tr.pos[2]);
+      d.scale.set(tr.spread * 0.14, tr.h * 0.9, tr.spread * 0.14);
+      d.rotation.set(0, 0, 0);
+      d.updateMatrix();
+      trunk.setMatrixAt(i, d.matrix);
+      // Canopy
+      d.position.set(tr.pos[0], tr.pos[1] + tr.h * 0.95, tr.pos[2]);
+      d.scale.set(tr.spread, tr.spread * 1.25, tr.spread);
+      d.updateMatrix();
+      canopy.setMatrixAt(i, d.matrix);
+      col.setHSL(tr.hue, 0.42, 0.26 + hash01(`t${i}`, 17) * 0.1);
+      canopy.setColorAt(i, col);
+    });
+    trunk.instanceMatrix.needsUpdate = true;
+    canopy.instanceMatrix.needsUpdate = true;
+    if (canopy.instanceColor) canopy.instanceColor.needsUpdate = true;
+  }, [trees]);
+
+  return (
+    <group>
+      <instancedMesh ref={trunkRef} args={[undefined, undefined, COUNT]} frustumCulled={false}>
+        <cylinderGeometry args={[0.6, 0.9, 1, 5]} />
+        <meshStandardMaterial color="#4a3826" roughness={1} />
+      </instancedMesh>
+      <instancedMesh ref={canopyRef} args={[undefined, undefined, COUNT]} frustumCulled={false}>
+        <icosahedronGeometry args={[1, 1]} />
+        <meshStandardMaterial vertexColors roughness={1} flatShading />
+      </instancedMesh>
     </group>
   );
 }
