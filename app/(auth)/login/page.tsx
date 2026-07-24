@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 import { login, type ActionState } from "@/app/actions/auth";
+import { brandImage, BRAND } from "@/lib/brand";
 
 const initialState: ActionState = {};
 
@@ -23,7 +24,27 @@ export default function LoginPage() {
   const [state, formAction] = useFormState(login, initialState);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-12">
+      {/* Golden-hour valley — the world you're returning to. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={brandImage("valleyHero")}
+        alt={BRAND.valleyHero.alt}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+        style={{ objectPosition: BRAND.valleyHero.focus }}
+      />
+      {/* Legibility scrim so the form panel reads over the art. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(120% 90% at 50% 45%, rgba(6,16,10,0.35) 0%, rgba(6,16,10,0.68) 60%, rgba(6,16,10,0.90) 100%)",
+        }}
+      />
+
+      <div className="relative z-10 w-full max-w-md rounded-3xl border border-parchment/15 bg-black/35 p-8 backdrop-blur-md">
       <h1 className="mb-2 font-serif text-3xl text-parchment">Welcome back</h1>
       <p className="mb-8 text-parchment/70">Return to your Living Legacy Forest.</p>
 
@@ -62,6 +83,7 @@ export default function LoginPage() {
           Plant your seed
         </Link>
       </p>
+      </div>
     </main>
   );
 }

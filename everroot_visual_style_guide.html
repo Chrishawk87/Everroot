@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EverRoot — Visual Style Guide</title>
+<style>
+  :root{
+    --gold:#E8B15C; --gold-soft:#F0C674;
+    --green-deep:#2F4A2C; --green:#3E5A38; --moss:#586B47;
+    --bark:#4A3826; --bark-light:#6B4E34;
+    --cream:#F3E9D8; --sky:#8FA9B8; --sky-deep:#6E8CA0;
+    --soil:#241C15; --ink:#EFE7D8;
+    --panel:rgba(255,255,255,0.04); --line:rgba(240,231,216,0.12);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 70% -10%, rgba(232,177,92,0.14), transparent 60%),
+      linear-gradient(180deg,#1a1510 0%, #14100c 60%, #0f0c08 100%);
+    color:var(--ink);
+    font-family:"Georgia","Iowan Old Style",serif;
+    line-height:1.6;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:64px 28px 96px}
+  header.hero{text-align:center;padding:40px 0 24px;border-bottom:1px solid var(--line);margin-bottom:56px}
+  .kicker{font-family:ui-sans-serif,system-ui,sans-serif;letter-spacing:.32em;text-transform:uppercase;font-size:12px;color:var(--gold);opacity:.9}
+  h1{font-size:52px;line-height:1.05;margin:14px 0 10px;font-weight:400;letter-spacing:.5px}
+  h1 .sub{display:block;font-size:20px;color:var(--sky);letter-spacing:.18em;text-transform:uppercase;margin-top:14px;font-family:ui-sans-serif,system-ui,sans-serif}
+  .lede{max-width:720px;margin:18px auto 0;font-size:18px;color:#d9cfbe}
+  h2{font-family:ui-sans-serif,system-ui,sans-serif;font-size:14px;letter-spacing:.28em;text-transform:uppercase;color:var(--gold);margin:64px 0 6px;font-weight:600}
+  h2 + .desc{color:#c9bfae;margin:0 0 26px;max-width:760px}
+  section{scroll-margin-top:24px}
+  .grid{display:grid;gap:18px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  @media(max-width:760px){.g2,.g3{grid-template-columns:1fr}}
+  figure{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  figure img{display:block;width:100%;height:auto;background:#0c0a07}
+  figcaption{padding:12px 14px;font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;color:#cabfad}
+  figcaption b{color:var(--ink);font-weight:600}
+  figcaption .lens{color:var(--gold);font-weight:600}
+  .palette{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:8px}
+  @media(max-width:760px){.palette{grid-template-columns:repeat(2,1fr)}}
+  .sw{border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+  .sw .chip{height:78px}
+  .sw .meta{padding:10px 12px;font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px}
+  .sw .meta b{display:block;color:var(--ink);font-size:13px;margin-bottom:2px}
+  .sw .meta span{color:#b7ad9c}
+  .rules{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;font-family:ui-sans-serif,system-ui,sans-serif}
+  @media(max-width:760px){.rules{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .card h3{margin:0 0 8px;font-size:15px;letter-spacing:.04em;color:var(--gold-soft)}
+  .card ul{margin:0;padding-left:18px;color:#d3c9b7;font-size:14.5px}
+  .card li{margin:5px 0}
+  table{width:100%;border-collapse:collapse;font-family:ui-sans-serif,system-ui,sans-serif;font-size:14.5px;margin-top:6px}
+  td{border-top:1px solid var(--line);padding:12px 10px;vertical-align:top;color:#d3c9b7}
+  td.k{color:var(--gold-soft);font-weight:600;white-space:nowrap;width:180px}
+  .do{border-left:3px solid var(--moss)}
+  .dont{border-left:3px solid #7a4a3a}
+  footer{margin-top:72px;padding-top:22px;border-top:1px solid var(--line);font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;color:#9c9382}
+  a{color:var(--gold-soft)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">Visual Identity &nbsp;·&nbsp; The Living Legacy Forest</div>
+    <h1>EverRoot<span class="sub">Visual Style Guide</span></h1>
+    <p class="lede">The most emotionally beautiful digital place ever made — a sacred valley where families
+    return for generations. Everything here must communicate warmth, peace, wisdom, hope, and timelessness.
+    Golden hour, grounded photorealism, one colossal tree that <em>is</em> a human life.</p>
+  </header>
+
+  <!-- MASTER TREE -->
+  <section id="hero">
+    <h2>The Master Tree · Hero Language</h2>
+    <p class="desc">The anchor of the identity. A single 300-year-old sacred tree — 25 ft trunk,
+    a canopy spanning hundreds of feet — read across four canonical camera positions.
+    All four are approved as the visual north star.</p>
+    <div class="grid g2">
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_195400_5be70f17-367a-473d-9fc8-54daf0785c3b.png" alt="Wide valley hero" loading="lazy"/>
+        <figcaption><b>Establishing hero</b> — <span class="lens">35mm</span> · tree alone in the valley, god rays through mist, off-center rule of thirds.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_195415_fa859a6a-ff98-42f4-bed6-ff6ed856ee49.png" alt="Low trunk with memory veins" loading="lazy"/>
+        <figcaption><b>The trunk &amp; memory veins</b> — <span class="lens">50mm</span> · looking up ancient bark, faint golden light in the cracks, roots spreading. Makes the viewer feel small.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_195428_664d58ab-5926-448b-ac58-d7dd356e5db3.png" alt="Canopy interior" loading="lazy"/>
+        <figcaption><b>Inside the crown</b> — <span class="lens">85mm</span> · backlit translucent leaves, blossoms, memories resting in the branches.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_195449_7ba74537-e56a-4ee6-a9a0-bae3acea8630.png" alt="Above the clouds reveal" loading="lazy"/>
+        <figcaption><b>The reveal</b> — <span class="lens">35mm</span> · opening frame, crown breaking through dawn cloud. First shot of the experience.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- THE WORLD -->
+  <section id="world">
+    <h2>The World · Valley &amp; Community</h2>
+    <p class="desc">The tree lives inside a whole living valley: wooden paths, streams and waterfalls,
+    bridges, ancient stones, mist and god rays. It should feel like a place, not a backdrop.</p>
+    <div class="grid g2">
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_200452_15b83036-7791-4cb2-9ef1-c6d6892422aa.png" alt="Wooden path to the tree" loading="lazy"/>
+        <figcaption><b>The arrival</b> — <span class="lens">35mm</span> · wooden path &amp; bridge over a stream leading to the tree.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_200508_bff5f588-7959-4aeb-8679-ec82b3df30f0.png" alt="Waterfall and lake" loading="lazy"/>
+        <figcaption><b>Waterfall &amp; lake</b> — <span class="lens">50mm</span> · mossy grotto, still reflective water, rising mist.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_200529_ae378bb5-1853-45bd-9c4b-c0082c008f8a.png" alt="Lantern path at dusk" loading="lazy"/>
+        <figcaption><b>Dusk path</b> — <span class="lens">85mm</span> · warm lanterns, fireflies, blue hour. The tender, intimate register.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_200542_d6174d8d-0ce6-41a7-9a4c-d4f90eab1cbb.png" alt="Valley vista" loading="lazy"/>
+        <figcaption><b>The valley</b> — <span class="lens">35mm</span> · epic scale, layered mist, the tree towering above the whole world.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- MATERIALS -->
+  <section id="materials">
+    <h2>Materials · Surface Reference</h2>
+    <p class="desc">Grounded, scanned-quality surface studies — the texture bible for production assets.
+    Even lighting, macro detail, no fantasy. The bark alone carries the only permitted "magic":
+    a barely-perceptible golden vein in one crack.</p>
+    <div class="grid g3">
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_201220_c1fd99d4-47cb-49b2-a40b-3da23822514d.png" alt="Bark" loading="lazy"/>
+        <figcaption><b>Ancient bark</b> — deep cracks, moss, faint memory vein.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_201239_e9de2f05-bd0a-49c3-92e1-1a9ec59c862f.png" alt="Leaves" loading="lazy"/>
+        <figcaption><b>Foliage</b> — veins, edge translucency, natural variation.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_201253_0d3d427e-3df0-4bc4-89ef-a416755f8e9e.png" alt="Blossoms" loading="lazy"/>
+        <figcaption><b>Blossoms</b> — soft cream petals &amp; wildflowers (milestones).</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_201322_1f503c17-18d8-4edd-8c38-611c64ea5f48.png" alt="Water" loading="lazy"/>
+        <figcaption><b>Water</b> — ripples, caustics, warm reflections.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_201404_cf8c6dbc-4990-4fa6-b885-d3ab037abb7c.png" alt="Moss and stone" loading="lazy"/>
+        <figcaption><b>Moss &amp; stone</b> — weathered rock, lichen, sprouting ferns.</figcaption>
+      </figure>
+      <figure>
+        <img src="https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260724_201427_7ac64655-04e5-440a-9337-8fce7117d5cd.png" alt="Forest floor" loading="lazy"/>
+        <figcaption><b>Forest floor</b> — tileable soil, leaf litter, roots.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- PALETTE -->
+  <section id="palette">
+    <h2>Color Palette</h2>
+    <p class="desc">Warm earth tones, deep greens, golden light, muted blue distance. Nothing oversaturated —
+    a premium, luxury restraint.</p>
+    <div class="palette">
+      <div class="sw"><div class="chip" style="background:#E8B15C"></div><div class="meta"><b>Golden Hour</b><span>#E8B15C · key light, memory</span></div></div>
+      <div class="sw"><div class="chip" style="background:#2F4A2C"></div><div class="meta"><b>Deep Forest</b><span>#2F4A2C · canopy shadow</span></div></div>
+      <div class="sw"><div class="chip" style="background:#586B47"></div><div class="meta"><b>Moss</b><span>#586B47 · mid greens</span></div></div>
+      <div class="sw"><div class="chip" style="background:#4A3826"></div><div class="meta"><b>Bark Brown</b><span>#4A3826 · trunk, wood</span></div></div>
+      <div class="sw"><div class="chip" style="background:#F3E9D8"></div><div class="meta"><b>Blossom Cream</b><span>#F3E9D8 · highlights, text</span></div></div>
+      <div class="sw"><div class="chip" style="background:#8FA9B8"></div><div class="meta"><b>Muted Sky</b><span>#8FA9B8 · distance, air</span></div></div>
+      <div class="sw"><div class="chip" style="background:#6E8CA0"></div><div class="meta"><b>Dusk Blue</b><span>#6E8CA0 · blue hour</span></div></div>
+      <div class="sw"><div class="chip" style="background:#241C15"></div><div class="meta"><b>Earth / Soil</b><span>#241C15 · roots, ground UI</span></div></div>
+    </div>
+  </section>
+
+  <!-- CRAFT RULES -->
+  <section id="craft">
+    <h2>Craft Rules</h2>
+    <div class="rules">
+      <div class="card">
+        <h3>Lighting</h3>
+        <ul>
+          <li>Golden hour is the default. Warm, low, directional sun.</li>
+          <li>Volumetric god rays &amp; morning mist; global illumination.</li>
+          <li>Subsurface scattering on every leaf; soft shadows; ambient occlusion.</li>
+          <li>Bloom kept subtle; cinematic exposure; true HDR.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Camera &amp; Lens</h3>
+        <ul>
+          <li><b>35mm</b> — vistas, establishing scale.</li>
+          <li><b>50mm</b> — natural hero &amp; environment.</li>
+          <li><b>85mm</b> — intimate, shallow depth, tenderness.</li>
+          <li>Movement is human, never robotic. Cinematic easing.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Composition</h3>
+        <ul>
+          <li>Rule of thirds; leading lines; natural framing.</li>
+          <li>Distinct foreground / midground / background.</li>
+          <li>Atmospheric perspective; negative space; depth.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Mood</h3>
+        <ul>
+          <li>Grounded photorealism — pull back overt "magic."</li>
+          <li>Peace over spectacle; the viewer should stop and stare.</li>
+          <li>Nothing static — everything gently breathes and moves.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- SYMBOLISM -->
+  <section id="meaning">
+    <h2>What Everything Means</h2>
+    <p class="desc">The tree is not a tree. Every element is a part of a human life — this mapping governs
+    how any new asset earns its place.</p>
+    <table>
+      <tr><td class="k">Roots</td><td>Ancestors &amp; heritage</td></tr>
+      <tr><td class="k">Trunk</td><td>A single lifetime</td></tr>
+      <tr><td class="k">Large branches</td><td>Life's major categories</td></tr>
+      <tr><td class="k">Small branches</td><td>Chapters</td></tr>
+      <tr><td class="k">Leaves</td><td>Individual stories</td></tr>
+      <tr><td class="k">Flowers</td><td>Milestones</td></tr>
+      <tr><td class="k">Fruit</td><td>Recipes, wisdom, traditions, achievements</td></tr>
+      <tr><td class="k">Birds</td><td>Family members currently exploring</td></tr>
+      <tr><td class="k">Light</td><td>Memory</td></tr>
+      <tr><td class="k">Wind</td><td>Time</td></tr>
+    </table>
+  </section>
+
+  <!-- DO / DONT -->
+  <section id="guardrails">
+    <h2>Do / Don't</h2>
+    <div class="rules">
+      <div class="card do">
+        <h3>Always</h3>
+        <ul>
+          <li>Golden hour, warm + grounded, photoreal.</li>
+          <li>One dominant sacred tree; sense of scale.</li>
+          <li>Layered depth, mist, restrained palette.</li>
+          <li>Deliver finals upscaled to 4K.</li>
+        </ul>
+      </div>
+      <div class="card dont">
+        <h3>Never</h3>
+        <ul>
+          <li>Oversaturation, neon, heavy bloom.</li>
+          <li>Low-poly, placeholder, or "programmer art."</li>
+          <li>Overt fantasy glow (memory vein stays subtle).</li>
+          <li>Flat, static, or robotic compositions.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    EverRoot Visual Style Guide · established 2026-07-24 · generated with Higgsfield (Nano Banana Pro, 2K).
+    Fourteen foundational plates. This document defines the permanent visual language; all future artwork must match it.
+  </footer>
+
+</div>
+</body>
+</html>

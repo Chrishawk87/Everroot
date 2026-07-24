@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useFormState, useFormStatus } from "react-dom";
 import { signup, type ActionState } from "@/app/actions/auth";
 import type { InvitePreview } from "@/app/actions/family";
+import { brandImage, BRAND } from "@/lib/brand";
 
 const initialState: ActionState = {};
 
@@ -24,7 +25,27 @@ export default function SignupForm({ invite }: { invite?: InvitePreview | null }
   const [state, formAction] = useFormState(signup, initialState);
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6 py-12">
+    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-12">
+      {/* Inside the sunlit canopy — where a new life begins as a seed. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={brandImage("canopy")}
+        alt={BRAND.canopy.alt}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+        style={{ objectPosition: BRAND.canopy.focus }}
+      />
+      {/* Legibility scrim so the form panel reads over the art. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(120% 90% at 50% 45%, rgba(6,16,10,0.35) 0%, rgba(6,16,10,0.68) 60%, rgba(6,16,10,0.90) 100%)",
+        }}
+      />
+
+      <div className="relative z-10 w-full max-w-md rounded-3xl border border-parchment/15 bg-black/35 p-8 backdrop-blur-md">
       <h1 className="mb-2 font-serif text-3xl text-parchment">Plant your seed</h1>
 
       {invite ? (
@@ -87,6 +108,7 @@ export default function SignupForm({ invite }: { invite?: InvitePreview | null }
           Sign in
         </Link>
       </p>
+      </div>
     </main>
   );
 }
