@@ -21,6 +21,26 @@ export interface Fork {
   tip: Vec3;
 }
 
+/** A healed wound in the bark — one per hardship/lesson the life carried
+ *  through. Placed on the lower/mid trunk; glows faintly gold (scars that
+ *  became wisdom). */
+export interface Scar {
+  /** World position of the scar's centre on the trunk surface. */
+  pos: Vec3;
+  /** Rotation about the trunk axis so the seam faces outward. */
+  angle: number;
+  /** Length of the vertical seam. */
+  size: number;
+}
+
+/** A concentric ripple ring in the underground root network — one per
+ *  generation of family/heritage, radiating outward like growth rings of the
+ *  whole lineage, not just this one tree. */
+export interface GenRing {
+  radius: number;
+  depth: number;
+}
+
 export interface ForestLayout {
   trunkHeight: number;
   /** Height up the trunk where it splits into two main forks. */
@@ -29,6 +49,15 @@ export interface ForestLayout {
   forks: Fork[];
   positioned: PositionedNode[];
   limbs: Limb[];
+  /** Healed bark wounds — one per hardship the life carried through. */
+  scars: Scar[];
+  /** Underground generational rings — one per generation of family/heritage. */
+  genRings: GenRing[];
+  /** Cumulative lean of the whole crown, read from life milestones. Applied to
+   *  the fork tips and the crown centre so big turning-points visibly bend the
+   *  silhouette (a new dominant direction), always clamped so the tree still
+   *  stands gracefully. Expressed as a fraction of trunk height. */
+  crownLean: Vec3;
   /** ---- Continuous growth grammar (form read from the life, not a stage bucket) ---- */
   /** Trunk girth at the ground — grows with the volume of a life's memories. */
   trunkRadiusBottom: number;
@@ -189,14 +218,41 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
   // forks (not the central pole), which is what gives the wide, spreading
   // silhouette. The gap between the forks is where the low sun burns through.
   const H = trunkHeight;
+
+  // ---- Milestone lean: turning-points bend the silhouette ----
+  // Every major life event (a FLOWER / "Milestones" memory) nudges the whole
+  // crown in a stable direction unique to that event. The nudges accumulate —
+  // a life full of bold turns leans further and grows a clearly dominant
+  // direction — but the total is saturated and clamped so the tree always
+  // stands gracefully rather than toppling. Deterministic: same milestones →
+  // same lean, forever.
+  const milestones = graph.nodes.filter(
+    (n) => n.kind === "FLOWER" || /milestone|graduat|wedding|married|born|birth|first|moved|founded|launch/i.test(n.title),
+  );
+  let leanX = 0;
+  let leanZ = 0;
+  for (const m of milestones) {
+    const dir = hash01(m.id, 71) * Math.PI * 2;
+    const w = 0.12 + hash01(m.id, 72) * 0.1;
+    leanX += Math.cos(dir) * w;
+    leanZ += Math.sin(dir) * w;
+  }
+  // Saturate the magnitude so many milestones keep bending but ever less, and
+  // clamp to a graceful maximum lean (~18% of height in any direction).
+  const rawLean = Math.hypot(leanX, leanZ);
+  const LEAN_MAX = 0.18;
+  const leanScale = rawLean > 0 ? (LEAN_MAX * saturate(rawLean, 0.6)) / rawLean : 0;
+  const crownLean: Vec3 = [leanX * leanScale, 0, leanZ * leanScale];
+
   // Split higher up so there's a real, tall trunk before the crown — a grand
   // tree, not a low slingshot. The forks then sweep UP and out, reaching above
-  // the trunk's nominal height so the whole tree reads as towering.
+  // the trunk's nominal height so the whole tree reads as towering. The whole
+  // crown then leans by `crownLean`, so life's turning-points bend the tree.
   const forkHeight = H * 0.44;
   const forkBase: Vec3 = [0, forkHeight, 0];
   const forks: Fork[] = [
-    { base: forkBase, tip: [H * 0.34, H * 1.04, H * 0.05] },
-    { base: forkBase, tip: [-H * 0.36, H * 1.02, -H * 0.05] },
+    { base: forkBase, tip: [H * 0.34 + crownLean[0] * H, H * 1.04, H * 0.05 + crownLean[2] * H] },
+    { base: forkBase, tip: [-H * 0.36 + crownLean[0] * H, H * 1.02, -H * 0.05 + crownLean[2] * H] },
   ];
   for (const f of forks) limbs.push({ from: f.base, to: f.tip, kind: "fork" });
 
@@ -386,12 +442,62 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     limbs.push({ from: [0, growth.trunkRadiusBottom * 0.2, 0], to: pos, kind: "root" });
   });
 
+  // ---- Healed scars: the hardships a life carried through ----
+  // Every storm, loss, mistake or hard-won lesson leaves a permanent mark in
+  // the bark — but a HEALED one, glowing faintly gold, because scars are where
+  // wisdom grew. They climb the lower/mid trunk in the order they were lived,
+  // each facing a stable direction. Deterministic and cumulative: a scar, once
+  // earned, never disappears.
+  const adversity = graph.nodes
+    .filter(
+      (n) =>
+        n.epoch === "STORMS" ||
+        /mistake|regret|loss|lost|grief|lesson|hard|storm|struggl|fail|divorce|illness/i.test(n.title),
+    )
+    // Stable order so scars stack the same way every render.
+    .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
+  const scars: Scar[] = [];
+  const scarCount = Math.min(adversity.length, 14);
+  for (let i = 0; i < scarCount; i++) {
+    const n = adversity[i];
+    // Climb the lower two-thirds of the trunk, spaced so they never crowd.
+    const t = scarCount === 1 ? 0.4 : 0.12 + (i / (scarCount - 1)) * 0.62;
+    const y = forkHeight * t;
+    // Trunk radius tapers from bottom to the fork; sit the scar on the surface.
+    const rHere = growth.trunkRadiusBottom + (growth.trunkRadiusTop - growth.trunkRadiusBottom) * t;
+    const angle = hash01(n.id, 91) * Math.PI * 2;
+    const size = (0.5 + hash01(n.id, 92) * 0.8) * (0.6 + growth.girthScale * 0.4);
+    scars.push({
+      pos: [Math.cos(angle) * rHere, y, Math.sin(angle) * rHere],
+      angle,
+      size,
+    });
+  }
+
+  // ---- Generational rings: the whole lineage, not just this tree ----
+  // The underground network expands by one ring per generation of family and
+  // heritage recorded — parents, grandparents, and the future generations that
+  // will grow from these seeds. Each ring is a faint gold ripple radiating
+  // outward beneath the forest floor, so the roots read as belonging to a much
+  // larger family story.
+  const generations = 1 + Math.round(saturate(personCount + rootNodeCount, 5) * 3); // 1..4
+  const genRings: GenRing[] = [];
+  for (let g = 0; g < generations; g++) {
+    genRings.push({
+      radius: 1.4 + g * (1.3 + rootedness * 0.9),
+      depth: 0.5 + g * 0.55,
+    });
+  }
+
   return {
     trunkHeight,
     forkHeight,
     forks,
     positioned,
     limbs,
+    scars,
+    genRings,
+    crownLean,
     trunkRadiusBottom: growth.trunkRadiusBottom,
     trunkRadiusTop: growth.trunkRadiusTop,
     crownRadius: growth.crownRadius,

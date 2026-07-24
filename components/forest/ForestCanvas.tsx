@@ -6,7 +6,7 @@ import { OrbitControls, Html, Sky, Environment, Lightformer } from "@react-three
 import { EffectComposer, Bloom, Vignette, SMAA } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
-import { computeLayout, type PositionedNode, type Vec3, type Limb, type Fork, type ForestLayout } from "@/lib/forest/layout";
+import { computeLayout, type PositionedNode, type Vec3, type Limb, type Fork, type ForestLayout, type Scar, type GenRing } from "@/lib/forest/layout";
 
 const COLORS: Record<string, string> = {
   SEED: "#c9a86a",
@@ -525,9 +525,16 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   // Seat the canopy ON the boughs (the forks reach up to ~1.03× the trunk
   // height), not floating in a cloud above them, so the crown reads as one
   // connected mass growing out of the structure.
+  // The crown leans with the life's milestones (see layout.crownLean), so the
+  // whole silhouette bends toward the direction a life's big turning-points
+  // pushed it — always clamped so the tree still stands gracefully.
   const crownCenter = useMemo<Vec3>(
-    () => [0, layout.trunkHeight * 0.9, 0],
-    [layout.trunkHeight],
+    () => [
+      layout.crownLean[0] * layout.trunkHeight,
+      layout.trunkHeight * 0.9,
+      layout.crownLean[2] * layout.trunkHeight,
+    ],
+    [layout.trunkHeight, layout.crownLean],
   );
 
   const focusPos = useMemo<Vec3 | null>(() => {
@@ -635,6 +642,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       <SkyClouds />
       <Ground grass={groundColor} normal={groundNormal} />
       <GrassField />
+      {/* Generational rings ripple outward beneath the floor — one per
+          generation of family/heritage — so the roots read as part of a whole
+          lineage. */}
+      <GenRings rings={layout.genRings} nightRef={nightRef} />
       {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
       <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} nightRef={nightRef} />
 
@@ -660,6 +671,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         .map((limb, i) => (
           <Branch key={i} limb={limb} girthScale={layout.girthScale} bark={barkTex} />
         ))}
+
+      {/* Healed scars climb the trunk — one per hardship the life carried
+          through, each glowing faintly gold: wounds that became wisdom. */}
+      <Scars scars={layout.scars} nightRef={nightRef} />
 
       {/* Decorative full canopy. */}
       {crown.count > 0 ? (
@@ -1306,6 +1321,96 @@ function CanopyShadow({ tex, center, radius }: { tex: THREE.CanvasTexture; cente
       <planeGeometry args={[radius * 3.2, radius * 3.2]} />
       <meshBasicMaterial map={tex} transparent depthWrite={false} opacity={0.85} />
     </mesh>
+  );
+}
+
+// Healed scars in the bark — one per hardship a life carried through. Each is a
+// dark seam sunk into the trunk with a soft gold glow along it: a wound that
+// became wisdom. They sit on the trunk surface, facing outward, and pulse very
+// faintly so they read as alive rather than painted on.
+function Scars({ scars, nightRef }: { scars: Scar[]; nightRef: React.MutableRefObject<number> }) {
+  const glowRefs = useRef<(THREE.Material | null)[]>([]);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const night = nightRef.current;
+    for (let i = 0; i < glowRefs.current.length; i++) {
+      const m = glowRefs.current[i] as THREE.MeshBasicMaterial | null;
+      if (!m) continue;
+      // Gentle breathing, a touch brighter after dark so scars glow at night.
+      m.opacity = 0.28 + 0.12 * Math.sin(t * 0.6 + i * 1.7) + night * 0.25;
+    }
+  });
+  if (scars.length === 0) return null;
+  return (
+    <group>
+      {scars.map((s, i) => {
+        // Lay each seam flat against the trunk: rotate the group so +Z points
+        // outward from the axis, then the seam runs vertically up the surface.
+        return (
+          <group key={i} position={s.pos} rotation={[0, -s.angle + Math.PI / 2, 0]}>
+            {/* The dark healed groove. */}
+            <mesh>
+              <capsuleGeometry args={[0.035, s.size, 4, 8]} />
+              <meshStandardMaterial color="#2c1a0e" roughness={1} />
+            </mesh>
+            {/* Soft gold light welling from within the scar. */}
+            <mesh position={[0, 0, 0.02]}>
+              <planeGeometry args={[0.14, s.size + 0.18]} />
+              <meshBasicMaterial
+                ref={(r) => {
+                  glowRefs.current[i] = r;
+                }}
+                color="#ffce7a"
+                transparent
+                opacity={0.3}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+// Generational rings: one faint gold ripple beneath the forest floor per
+// generation of family/heritage. They radiate outward like growth rings of the
+// whole lineage, softly pulsing so the underground reads as a living web that
+// belongs to a family far larger than this single tree.
+function GenRings({ rings, nightRef }: { rings: GenRing[]; nightRef: React.MutableRefObject<number> }) {
+  const refs = useRef<(THREE.Material | null)[]>([]);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const night = nightRef.current;
+    for (let i = 0; i < refs.current.length; i++) {
+      const m = refs.current[i] as THREE.MeshBasicMaterial | null;
+      if (!m) continue;
+      // A slow outward pulse, offset per ring, brighter underground/at night.
+      m.opacity = 0.06 + 0.05 * (0.5 + 0.5 * Math.sin(t * 0.5 - i * 0.9)) + night * 0.05;
+    }
+  });
+  if (rings.length === 0) return null;
+  return (
+    <group>
+      {rings.map((r, i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[0, -r.depth, 0]}>
+          <ringGeometry args={[r.radius - 0.06, r.radius + 0.06, 96]} />
+          <meshBasicMaterial
+            ref={(m) => {
+              refs.current[i] = m;
+            }}
+            color="#e7b465"
+            transparent
+            opacity={0.08}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
