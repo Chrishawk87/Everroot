@@ -51,13 +51,15 @@ interface Atmosphere {
 // the horizon behind the tree so the sky glows amber rather than blowing out to
 // white overhead. This is the unmistakable golden palette of the concept art.
 const DAY_ATMOSPHERE: Atmosphere = {
-  sun: [-30, 6.5, -22],
-  background: "#e6c489",
-  sky: { turbidity: 6, rayleigh: 1.9, mieCoefficient: 0.024, mieDirectionalG: 0.93 },
-  fog: { color: "#e4c88e", near: 44, far: 140 },
+  // A lower sun + richer sky so the horizon glows deep amber rather than
+  // blowing out to white where the disc sits behind the tree.
+  sun: [-30, 4.2, -24],
+  background: "#e3b877",
+  sky: { turbidity: 8, rayleigh: 2.4, mieCoefficient: 0.026, mieDirectionalG: 0.9 },
+  fog: { color: "#e0bd7e", near: 44, far: 140 },
   ambient: 0.32,
   hemi: { sky: "#f2dca6", ground: "#3f4a2c", intensity: 0.5 },
-  dir: { color: "#ffca82", intensity: 1.45 },
+  dir: { color: "#ffc276", intensity: 1.4 },
   motes: { color: "#ffe2a6", opacity: 0.42 },
 };
 
@@ -570,7 +572,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       dpr={[1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.78 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.72 }}
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={[atmo.background]} />
@@ -597,7 +599,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {/* Strong warm rim light from low behind the tree: the golden-hour sun
           rakes through the canopy and lights the silhouette from the back,
           just like the concept. No shadow — purely cinematic separation. */}
-      <directionalLight position={[-14, 4, -16]} intensity={1.3} color="#ffb85e" />
+      <directionalLight position={[-14, 4, -16]} intensity={1.05} color="#ffb85e" />
       {/* Low sun-glow point tucked behind the trunk fork so light appears to
           burst through the split of the tree toward the viewer. */}
       <pointLight position={[0, 2.4, -3]} intensity={1.6} distance={22} decay={1.6} color="#ffc873" />

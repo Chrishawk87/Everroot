@@ -200,17 +200,46 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
   ];
   for (const f of forks) limbs.push({ from: f.base, to: f.tip, kind: "fork" });
 
+  // ---- How rooted is this life? ----
+  // Family and heritage anchor a person. The more people in the forest and the
+  // more heritage roots recorded, the stronger and deeper the tree's root
+  // system reads — a visible measure of how rooted a life is. Saturating +
+  // constrained, like every other mapping, so it never overwhelms the tree.
+  const counts2 = graph.counts as Record<string, number>;
+  const personCount = counts2.PERSON ?? 0;
+  const rootNodeCount = counts2.ROOT ?? 0;
+  const relCount = counts2.RELATIONSHIP ?? 0;
+  const rootedness = saturate(personCount * 1.5 + rootNodeCount + relCount, 8); // 0..1
+
   // ---- Above-ground root flare ----
   // Thick buttress roots spread from the base of the trunk and dive into the
-  // earth, the mossy flare that anchors the concept tree to the ground.
-  const FLARES = 6;
+  // earth. A more rooted life grows more of them, spread wider, and scaled to
+  // the trunk's girth so they always look like they belong to this tree.
+  const gs = growth.girthScale;
+  const FLARES = 5 + Math.round(rootedness * 5); // 5..10
+  const flareStart = growth.trunkRadiusBottom * 0.85;
   for (let i = 0; i < FLARES; i++) {
     const a = (i / FLARES) * Math.PI * 2 + 0.3;
-    const spread = 1.2 + hash01(`flare${i}`, 3) * 0.9;
+    const spread = (1.2 + hash01(`flare${i}`, 3) * 0.9) * (1 + rootedness * 0.7) * (0.7 + gs * 0.3);
     limbs.push({
-      from: [Math.cos(a) * 0.12, forkHeight * 0.5, Math.sin(a) * 0.12],
+      from: [Math.cos(a) * flareStart, forkHeight * 0.5, Math.sin(a) * flareStart],
       to: [Math.cos(a) * spread, -0.18 - hash01(`flare${i}`, 7) * 0.2, Math.sin(a) * spread],
       kind: "flare",
+    });
+  }
+
+  // Deep taproots dive straight down and anchor the tree; the more rooted the
+  // life, the more of them and the deeper they reach. These read through the
+  // see-through soil as the tree's foundation.
+  const TAPROOTS = Math.round(rootedness * 5); // 0..5
+  for (let i = 0; i < TAPROOTS; i++) {
+    const a = (i / Math.max(1, TAPROOTS)) * Math.PI * 2 + 1.1;
+    const reach = 0.35 + hash01(`tap${i}`, 4) * 0.6;
+    const depth = 1.4 + rootedness * 2.6 + hash01(`tap${i}`, 9) * 0.8;
+    limbs.push({
+      from: [Math.cos(a) * flareStart * 0.6, forkHeight * 0.2, Math.sin(a) * flareStart * 0.6],
+      to: [Math.cos(a) * reach, -depth, Math.sin(a) * reach],
+      kind: "root",
     });
   }
 
@@ -325,14 +354,16 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     });
   });
 
-  // Roots radiate below ground (heritage / family history).
+  // Roots radiate below ground (heritage / family history). A more rooted life
+  // pushes them wider and deeper so the foundation visibly matches the family
+  // above it.
   const roots = trunk ? childrenOf.get(trunk.id)?.filter((c) => c.kind === "ROOT") ?? [] : [];
   roots.forEach((root, i) => {
     const angle = i * GOLDEN_ANGLE + 0.9;
-    const length = 1.1 + hash01(root.id, 11) * 0.7;
+    const length = (1.1 + hash01(root.id, 11) * 0.7) * (1 + rootedness * 0.6);
     const pos: Vec3 = [
       Math.cos(angle) * length,
-      -0.35 - hash01(root.id, 2) * 0.5,
+      -0.35 - hash01(root.id, 2) * 0.5 - rootedness * 0.7,
       Math.sin(angle) * length,
     ];
     positioned.push({ node: root, position: pos, scale: 0.28, parentId: trunk!.id });
