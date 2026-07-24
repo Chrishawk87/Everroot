@@ -7,6 +7,15 @@ import { EffectComposer, Bloom, Vignette, SMAA } from "@react-three/postprocessi
 import * as THREE from "three";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
 import { computeLayout, type PositionedNode, type Vec3, type Limb, type Fork, type ForestLayout, type Scar, type GenRing } from "@/lib/forest/layout";
+import { MODELS, BACKGROUND_TREE_IDS, GROUND_DETAIL_IDS } from "@/lib/forest/assets";
+import {
+  AssetBoundary,
+  HdriEnvironment,
+  Terrain,
+  Water,
+  Scatter,
+  type ScatterItem,
+} from "@/components/forest/assets";
 
 const COLORS: Record<string, string> = {
   SEED: "#c9a86a",
@@ -556,6 +565,57 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     return pts;
   }, [layout.limbs]);
 
+  // ---- The living world around the tree, placed from real assets ----
+  // Deterministic seeded placements for the surrounding forest, ground detail
+  // and distant peaks. The Scatter components load the actual GLB models for
+  // these; if a model isn't installed yet, its AssetBoundary simply omits it.
+  const backgroundTrees = useMemo<ScatterItem[]>(() => {
+    const out: ScatterItem[] = [];
+    for (let i = 0; i < 60; i++) {
+      const a = hash01(`bt${i}`, 3) * Math.PI * 2;
+      const r = 20 + hash01(`bt${i}`, 7) * 38; // ring the meadow, clear of the center
+      const id = BACKGROUND_TREE_IDS[i % BACKGROUND_TREE_IDS.length];
+      out.push({
+        url: MODELS[id].url,
+        position: [Math.cos(a) * r, -0.2, Math.sin(a) * r],
+        rotationY: hash01(`bt${i}`, 11) * Math.PI * 2,
+        scale: 1.1 + hash01(`bt${i}`, 5) * 2.2,
+      });
+    }
+    return out;
+  }, []);
+
+  const groundDetail = useMemo<ScatterItem[]>(() => {
+    const out: ScatterItem[] = [];
+    for (let i = 0; i < 140; i++) {
+      const a = hash01(`gd${i}`, 3) * Math.PI * 2;
+      const r = 5 + hash01(`gd${i}`, 7) * 40;
+      const id = GROUND_DETAIL_IDS[i % GROUND_DETAIL_IDS.length];
+      out.push({
+        url: MODELS[id].url,
+        position: [Math.cos(a) * r, 0, Math.sin(a) * r],
+        rotationY: hash01(`gd${i}`, 11) * Math.PI * 2,
+        scale: 0.5 + hash01(`gd${i}`, 5) * 1.1,
+      });
+    }
+    return out;
+  }, []);
+
+  const mountains = useMemo<ScatterItem[]>(() => {
+    const out: ScatterItem[] = [];
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + hash01(`mt${i}`, 3) * 0.5;
+      const r = 72 + hash01(`mt${i}`, 7) * 24;
+      out.push({
+        url: MODELS.mountain.url,
+        position: [Math.cos(a) * r, -3, Math.sin(a) * r],
+        rotationY: hash01(`mt${i}`, 11) * Math.PI * 2,
+        scale: 14 + hash01(`mt${i}`, 5) * 16,
+      });
+    }
+    return out;
+  }, []);
+
   const focusPos = useMemo<Vec3 | null>(() => {
     if (!focusId) return null;
     const p = layout.positioned.find((n) => n.node.id === focusId);
@@ -657,13 +717,34 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         <Lightformer intensity={0.35} color="#3d5230" position={[0, -6, 0]} scale={[14, 14, 1]} rotation={[Math.PI / 2, 0, 0]} />
       </Environment>
 
-      <MountainRange />
-      <RollingHills grass={grass} />
-      <DistantTrees />
-      <Lake nightRef={nightRef} />
+      {/* Image-based lighting from a real HDRI — the biggest lever on a
+          photoreal look. Falls back to the in-scene light rig above if the
+          .hdr isn't installed yet. */}
+      <AssetBoundary label="HDRI environment">
+        <HdriEnvironment hdriId="golden_hour" />
+      </AssetBoundary>
+
+      {/* The living world, all from production assets. Each is independently
+          boundaried, so any not-yet-installed asset is simply omitted (never a
+          placeholder primitive). */}
+      <AssetBoundary label="terrain">
+        <Terrain />
+      </AssetBoundary>
+      <AssetBoundary label="distant mountains">
+        <Scatter items={mountains} />
+      </AssetBoundary>
+      <AssetBoundary label="surrounding forest">
+        <Scatter items={backgroundTrees} />
+      </AssetBoundary>
+      <AssetBoundary label="ground detail">
+        <Scatter items={groundDetail} />
+      </AssetBoundary>
+      <AssetBoundary label="lake">
+        <Water />
+      </AssetBoundary>
+
       <SkyClouds />
-      <Ground grass={groundColor} normal={groundNormal} />
-      <GrassField />
+      <Ground />
       {/* Generational rings ripple outward beneath the floor — one per
           generation of family/heritage — so the roots read as part of a whole
           lineage. */}
@@ -757,110 +838,6 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         <Vignette offset={0.28} darkness={0.62} eskil={false} />
       </EffectComposer>
     </Canvas>
-  );
-}
-
-/* ---------- Grass ---------- */
-
-// A field of individual instanced blades around the base of the tree, each
-// leaning slightly and swaying in the same wind that moves the canopy. Fades
-// out with distance so the edge blends into the textured ground plane.
-// Short blade so the grass carpets the ground rather than standing tall.
-const BLADE_H = 0.26;
-function GrassField({ count = 34000, inner = 0.5, outer = 28 }: { count?: number; inner?: number; outer?: number }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-  const matRef = useRef<THREE.MeshStandardMaterial>(null);
-  const shaderRef = useRef<{ uniforms: { uTime: { value: number } } } | null>(null);
-
-  // A single tapered blade: a narrow triangle-ish quad that bends toward the tip.
-  const geometry = useMemo(() => {
-    const g = new THREE.PlaneGeometry(0.05, BLADE_H, 1, 4);
-    g.translate(0, BLADE_H / 2, 0); // pivot at the root
-    const pos = g.attributes.position as THREE.BufferAttribute;
-    for (let i = 0; i < pos.count; i++) {
-      const y = pos.getY(i);
-      const t = y / BLADE_H;
-      // Taper to a point and curl forward toward the tip.
-      pos.setX(i, pos.getX(i) * (1 - t * 0.85));
-      pos.setZ(i, pos.getZ(i) + t * t * 0.06);
-    }
-    pos.needsUpdate = true;
-    g.computeVertexNormals();
-    return g;
-  }, []);
-
-  useLayoutEffect(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    const dummy = new THREE.Object3D();
-    const color = new THREE.Color();
-    let placed = 0;
-    let guard = 0;
-    while (placed < count && guard < count * 4) {
-      guard++;
-      // Ring distribution, denser near the trunk.
-      const a = Math.random() * Math.PI * 2;
-      const r = inner + Math.pow(Math.random(), 0.7) * (outer - inner);
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      dummy.position.set(x, 0, z);
-      dummy.rotation.set(
-        (Math.random() - 0.5) * 0.3,
-        Math.random() * Math.PI * 2,
-        (Math.random() - 0.5) * 0.35,
-      );
-      const s = 0.7 + Math.random() * 0.9;
-      dummy.scale.set(s, s * (0.8 + Math.random() * 0.6), s);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(placed, dummy.matrix);
-      const l = 0.28 + Math.random() * 0.22;
-      color.setHSL(0.26 + (Math.random() - 0.5) * 0.04, 0.55, l);
-      mesh.setColorAt(placed, color);
-      placed++;
-    }
-    mesh.count = placed;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  }, [count, inner, outer]);
-
-  useLayoutEffect(() => {
-    const mat = matRef.current;
-    if (!mat) return;
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = { value: 0 };
-      shader.vertexShader =
-        "uniform float uTime;\n" +
-        shader.vertexShader.replace(
-          "#include <begin_vertex>",
-          `#include <begin_vertex>
-           #ifdef USE_INSTANCING
-           float bladeH = clamp(position.y / 0.26, 0.0, 1.0);
-           float ph = instanceMatrix[3].x * 1.3 + instanceMatrix[3].z * 0.7;
-           float sway = sin(uTime * 1.6 + ph) * 0.05 + sin(uTime * 0.7 + ph * 1.7) * 0.025;
-           transformed.x += sway * bladeH * bladeH;
-           transformed.z += cos(uTime * 1.2 + ph) * 0.025 * bladeH * bladeH;
-           #endif`,
-        );
-      shaderRef.current = shader as unknown as { uniforms: { uTime: { value: number } } };
-    };
-    mat.needsUpdate = true;
-  }, []);
-
-  useFrame((state) => {
-    if (shaderRef.current) shaderRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-  });
-
-  return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, count]} frustumCulled={false} receiveShadow>
-      <primitive object={geometry} attach="geometry" />
-      <meshStandardMaterial
-        ref={matRef}
-        color="#5f8f43"
-        side={THREE.DoubleSide}
-        roughness={0.9}
-        metalness={0}
-      />
-    </instancedMesh>
   );
 }
 
@@ -1319,7 +1296,11 @@ function LivingTrunk({
   );
 }
 
-function Ground({ grass, normal }: { grass: THREE.Texture; normal: THREE.CanvasTexture }) {
+// Functional earth volume for the underground root view. The VISIBLE ground
+// surface is now the asset-driven <Terrain/>; this component only supplies the
+// dark soil that gives the root network depth and occludes the sky when the
+// camera tilts below the horizon.
+function Ground() {
   return (
     <group>
       {/* Dark soil backdrop — gives the underground volume depth so the family
@@ -1328,30 +1309,12 @@ function Ground({ grass, normal }: { grass: THREE.Texture; normal: THREE.CanvasT
         <circleGeometry args={[60, 64]} />
         <meshStandardMaterial color="#241a12" roughness={1} />
       </mesh>
-      {/* Soil ceiling — the opaque underside of the earth. Its normal faces down
-          and it's FrontSide only, so it renders solid when the camera is BELOW
-          it (swallowing the sky and the undersides of the grass for a real
-          buried-in-earth feel) yet is culled from above, leaving the top-down
-          view see-through to the roots. */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
+      {/* Soil ceiling — the opaque underside of the earth. FrontSide-only with a
+          downward normal, so it renders solid when the camera is BELOW it (a
+          real buried-in-earth feel) yet is culled from above. */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
         <circleGeometry args={[60, 64]} />
         <meshStandardMaterial color="#1a0f07" roughness={1} side={THREE.FrontSide} />
-      </mesh>
-      {/* Grass surface — slightly see-through so the glowing roots beneath show
-          faintly, like roots through soil at dusk. Drawn without depth-write so
-          it never hard-occludes the network below it. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <circleGeometry args={[60, 64]} />
-        <meshStandardMaterial
-          map={grass}
-          normalMap={normal}
-          normalScale={GROUND_NORMAL_SCALE}
-          color="#c4b79f"
-          roughness={1}
-          transparent
-          opacity={0.72}
-          depthWrite={false}
-        />
       </mesh>
     </group>
   );
@@ -1541,242 +1504,6 @@ function CanopySparkles({
         toneMapped={false}
       />
     </points>
-  );
-}
-
-// A craggy low-poly mountain with a height-graded vertex color (dark forested
-// base → green shoulders → pale hazy/snow crest), so distant peaks read with
-// real relief and texture instead of as flat blobs. Jitter is deterministic.
-function makeMountainGeo(seed: string): THREE.BufferGeometry {
-  const geo = new THREE.ConeGeometry(1, 1, 8, 4);
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const colors = new Float32Array(pos.count * 3);
-  const base = new THREE.Color("#38452f");
-  const mid = new THREE.Color("#586b47");
-  const crest = new THREE.Color("#cdd4c4");
-  const col = new THREE.Color();
-  for (let i = 0; i < pos.count; i++) {
-    let x = pos.getX(i);
-    const y = pos.getY(i);
-    let z = pos.getZ(i);
-    const h = THREE.MathUtils.clamp(y + 0.5, 0, 1); // 0 base .. 1 crest
-    // Craggier toward the base; keep the summit tight.
-    x += (hash01(seed + i, 13) - 0.5) * 0.28 * (1 - h);
-    z += (hash01(seed + i, 29) - 0.5) * 0.28 * (1 - h);
-    pos.setXYZ(i, x, y, z);
-    if (h < 0.62) col.copy(base).lerp(mid, h / 0.62);
-    else col.copy(mid).lerp(crest, (h - 0.62) / 0.38);
-    colors[i * 3] = col.r;
-    colors[i * 3 + 1] = col.g;
-    colors[i * 3 + 2] = col.b;
-  }
-  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geo.computeVertexNormals();
-  return geo;
-}
-
-// A ring of forested mountains far beyond the meadow. Peaks cluster into a few
-// ridgelines (rather than an even fence), and fog gives them natural aerial
-// haze so they recede into the sky.
-function MountainRange() {
-  const peaks = useMemo(() => {
-    const out: { pos: Vec3; scale: Vec3; geo: THREE.BufferGeometry }[] = [];
-    const ridges = 6;
-    let idx = 0;
-    for (let rdg = 0; rdg < ridges; rdg++) {
-      const centerA = (rdg / ridges) * Math.PI * 2 + hash01(`ridge${rdg}`, 3) * 0.4;
-      const peaksInRidge = 3 + Math.round(hash01(`ridge${rdg}`, 8) * 3);
-      for (let p = 0; p < peaksInRidge; p++) {
-        const a = centerA + (p - peaksInRidge / 2) * 0.09;
-        const r = 66 + hash01(`m${idx}`, 7) * 26;
-        const w = 16 + hash01(`m${idx}`, 11) * 20;
-        const h = 16 + hash01(`m${idx}`, 5) * 26;
-        out.push({
-          pos: [Math.cos(a) * r, -2.5, Math.sin(a) * r],
-          scale: [w, h, w],
-          geo: makeMountainGeo(`m${idx}`),
-        });
-        idx++;
-      }
-    }
-    return out;
-  }, []);
-  return (
-    <group>
-      {peaks.map((m, i) => (
-        <mesh key={i} position={m.pos} scale={m.scale} geometry={m.geo}>
-          <meshStandardMaterial vertexColors roughness={1} flatShading />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-// Nearer rolling hills that ring the meadow — smooth, grassy, varied greens —
-// bridging the flat meadow and the distant peaks.
-function RollingHills({ grass }: { grass: THREE.Texture }) {
-  const hills = useMemo(() => {
-    const out: { pos: Vec3; scale: Vec3; color: string }[] = [];
-    const count = 18;
-    for (let i = 0; i < count; i++) {
-      const a = (i / count) * Math.PI * 2 + hash01(`h${i}`, 3) * 0.35;
-      const r = 34 + hash01(`h${i}`, 7) * 16;
-      const w = 13 + hash01(`h${i}`, 11) * 16;
-      const h = 4 + hash01(`h${i}`, 5) * 7;
-      const c = new THREE.Color().setHSL(0.27 + hash01(`h${i}`, 13) * 0.03, 0.38, 0.3 + hash01(`h${i}`, 9) * 0.12);
-      out.push({ pos: [Math.cos(a) * r, -2.2, Math.sin(a) * r], scale: [w, h, w], color: `#${c.getHexString()}` });
-    }
-    return out;
-  }, []);
-  return (
-    <group>
-      {hills.map((hill, i) => (
-        <mesh key={i} position={hill.pos} scale={hill.scale}>
-          <sphereGeometry args={[1, 20, 16]} />
-          <meshStandardMaterial map={grass} color={hill.color} roughness={1} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-// A still meadow lake off to one side — a gently rippling reflective surface
-// that catches the golden sky, with a soft shoreline and a thread of waterfall
-// tumbling from the hills into it. Makes the meadow read as a living place.
-function Lake({ nightRef }: { nightRef: React.MutableRefObject<number> }) {
-  const CENTER: Vec3 = [-24, 0, 20];
-  const R = 9;
-  const waterRef = useRef<THREE.Mesh>(null);
-  const fallRef = useRef<THREE.MeshBasicMaterial | null>(null);
-  const mistRef = useRef<THREE.Points>(null);
-
-  // Falling-water mist at the base of the cascade.
-  const mist = useMemo(() => {
-    const n = 40;
-    const positions = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      positions[i * 3] = CENTER[0] + 6 + (Math.random() - 0.5) * 1.6;
-      positions[i * 3 + 1] = Math.random() * 2.2;
-      positions[i * 3 + 2] = CENTER[2] - 5 + (Math.random() - 0.5) * 1.6;
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    return g;
-  }, []);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (waterRef.current) {
-      // A very gentle breathing tilt so the surface shimmers rather than sits dead flat.
-      waterRef.current.rotation.z = -Math.PI / 2 + Math.sin(t * 0.3) * 0.006;
-    }
-    if (fallRef.current) {
-      fallRef.current.opacity = 0.5 + Math.sin(t * 3) * 0.12;
-    }
-    if (mistRef.current) {
-      const p = mistRef.current.geometry.attributes.position as THREE.BufferAttribute;
-      for (let i = 0; i < p.count; i++) {
-        let y = p.getY(i) - 0.02;
-        if (y < 0) y = 2.2;
-        p.setY(i, y);
-      }
-      p.needsUpdate = true;
-    }
-  });
-
-  return (
-    <group>
-      {/* Water surface — low roughness so it mirrors the sky from the scene's
-          environment map; deep teal tint, faintly transparent at the edges. */}
-      <mesh ref={waterRef} rotation={[-Math.PI / 2, 0, 0]} position={[CENTER[0], 0.02, CENTER[2]]}>
-        <circleGeometry args={[R, 64]} />
-        <meshStandardMaterial
-          color="#2c5a63"
-          roughness={0.08}
-          metalness={0.5}
-          transparent
-          opacity={0.9}
-          envMapIntensity={1.2}
-        />
-      </mesh>
-      {/* Damp shoreline ring. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[CENTER[0], 0.01, CENTER[2]]}>
-        <ringGeometry args={[R, R + 1.4, 64]} />
-        <meshStandardMaterial color="#5a4a34" roughness={1} transparent opacity={0.7} depthWrite={false} />
-      </mesh>
-      {/* Waterfall — a thin bright sheet tumbling from a hill into the lake. */}
-      <mesh position={[CENTER[0] + 6, 2.4, CENTER[2] - 5]} rotation={[0.12, 0.5, 0]}>
-        <planeGeometry args={[1.2, 5]} />
-        <meshBasicMaterial ref={fallRef} color="#dfeef2" transparent opacity={0.55} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
-      {/* Mist at the foot of the falls. */}
-      <points ref={mistRef} geometry={mist}>
-        <pointsMaterial color="#eaf3f5" size={0.5} transparent opacity={0.35} depthWrite={false} sizeAttenuation />
-      </points>
-    </group>
-  );
-}
-
-// A community of other trees dotting the hills — the meadow is a forest, not a
-// lone tree in a void. Two instanced meshes (trunks + canopies) share one set
-// of scattered positions; fog fades the far ones into the hills.
-function DistantTrees() {
-  const trunkRef = useRef<THREE.InstancedMesh>(null);
-  const canopyRef = useRef<THREE.InstancedMesh>(null);
-  const COUNT = 70;
-  const trees = useMemo(() => {
-    const out: { pos: Vec3; h: number; spread: number; hue: number }[] = [];
-    for (let i = 0; i < COUNT; i++) {
-      const a = hash01(`t${i}`, 3) * Math.PI * 2;
-      const r = 22 + hash01(`t${i}`, 7) * 34; // beyond the meadow, across the hills
-      const h = 2.4 + hash01(`t${i}`, 5) * 4.5;
-      out.push({
-        pos: [Math.cos(a) * r, -1.8, Math.sin(a) * r],
-        h,
-        spread: 1.1 + hash01(`t${i}`, 11) * 1.3,
-        hue: 0.26 + hash01(`t${i}`, 13) * 0.05,
-      });
-    }
-    return out;
-  }, []);
-
-  useLayoutEffect(() => {
-    const trunk = trunkRef.current;
-    const canopy = canopyRef.current;
-    if (!trunk || !canopy) return;
-    const d = new THREE.Object3D();
-    const col = new THREE.Color();
-    trees.forEach((tr, i) => {
-      // Trunk
-      d.position.set(tr.pos[0], tr.pos[1] + tr.h * 0.4, tr.pos[2]);
-      d.scale.set(tr.spread * 0.14, tr.h * 0.9, tr.spread * 0.14);
-      d.rotation.set(0, 0, 0);
-      d.updateMatrix();
-      trunk.setMatrixAt(i, d.matrix);
-      // Canopy
-      d.position.set(tr.pos[0], tr.pos[1] + tr.h * 0.95, tr.pos[2]);
-      d.scale.set(tr.spread, tr.spread * 1.25, tr.spread);
-      d.updateMatrix();
-      canopy.setMatrixAt(i, d.matrix);
-      col.setHSL(tr.hue, 0.42, 0.26 + hash01(`t${i}`, 17) * 0.1);
-      canopy.setColorAt(i, col);
-    });
-    trunk.instanceMatrix.needsUpdate = true;
-    canopy.instanceMatrix.needsUpdate = true;
-    if (canopy.instanceColor) canopy.instanceColor.needsUpdate = true;
-  }, [trees]);
-
-  return (
-    <group>
-      <instancedMesh ref={trunkRef} args={[undefined, undefined, COUNT]} frustumCulled={false}>
-        <cylinderGeometry args={[0.6, 0.9, 1, 5]} />
-        <meshStandardMaterial color="#4a3826" roughness={1} />
-      </instancedMesh>
-      <instancedMesh ref={canopyRef} args={[undefined, undefined, COUNT]} frustumCulled={false}>
-        <icosahedronGeometry args={[1, 1]} />
-        <meshStandardMaterial vertexColors roughness={1} flatShading />
-      </instancedMesh>
-    </group>
   );
 }
 
