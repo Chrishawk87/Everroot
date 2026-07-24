@@ -55,9 +55,9 @@ const DAY_ATMOSPHERE: Atmosphere = {
   background: "#e6c489",
   sky: { turbidity: 6, rayleigh: 1.9, mieCoefficient: 0.024, mieDirectionalG: 0.93 },
   fog: { color: "#e4c88e", near: 44, far: 140 },
-  ambient: 0.3,
-  hemi: { sky: "#f2dca6", ground: "#3f4a2c", intensity: 0.48 },
-  dir: { color: "#ffca82", intensity: 1.7 },
+  ambient: 0.32,
+  hemi: { sky: "#f2dca6", ground: "#3f4a2c", intensity: 0.5 },
+  dir: { color: "#ffca82", intensity: 1.45 },
   motes: { color: "#ffe2a6", opacity: 0.42 },
 };
 
@@ -520,9 +520,12 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   // Crown size + fullness now come straight from the growth grammar (a function
   // of the life's memories and score), not a fixed per-stage table.
   const crown = { r: layout.crownRadius, count: layout.crownCount };
+  // Seat the canopy ON the boughs (the forks reach up to ~1.03× the trunk
+  // height), not floating in a cloud above them, so the crown reads as one
+  // connected mass growing out of the structure.
   const crownCenter = useMemo<Vec3>(
-    () => [0, layout.trunkHeight + crown.r * 0.45, 0],
-    [layout.trunkHeight, crown.r],
+    () => [0, layout.trunkHeight * 0.9, 0],
+    [layout.trunkHeight],
   );
 
   const focusPos = useMemo<Vec3 | null>(() => {
@@ -567,7 +570,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       dpr={[1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.86 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.78 }}
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={[atmo.background]} />
@@ -710,7 +713,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {/* Cinematic pass: bloom lifts the glowing memories, stars and low sun;
           SMAA cleans edges; a soft vignette focuses the eye on the tree. */}
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom mipmapBlur luminanceThreshold={0.78} luminanceSmoothing={0.26} intensity={0.66} radius={0.7} />
+        <Bloom mipmapBlur luminanceThreshold={0.86} luminanceSmoothing={0.3} intensity={0.5} radius={0.62} />
         <SMAA />
         <Vignette offset={0.28} darkness={0.62} eskil={false} />
       </EffectComposer>
@@ -972,7 +975,7 @@ function Canopy({
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + hash01(`c${i}`, 2) * 1.2;
       const rr = radius * (0.35 + hash01(`c${i}`, 5) * 0.4);
-      out.push([Math.cos(a) * rr, (hash01(`c${i}`, 9) - 0.35) * radius * 0.7, Math.sin(a) * rr]);
+      out.push([Math.cos(a) * rr, (hash01(`c${i}`, 9) - 0.35) * radius * 0.5, Math.sin(a) * rr]);
     }
     return out;
   }, [radius]);
@@ -990,7 +993,8 @@ function Canopy({
       const phi = Math.acos(2 * v - 1);
       const rr = radius * (0.4 + Math.random() * 0.55);
       const px = center[0] + c[0] + Math.sin(phi) * Math.cos(theta) * rr;
-      const py = center[1] + c[1] + Math.cos(phi) * rr * 0.92;
+      // Squash vertically into a broad, drooping dome that sits over the boughs.
+      const py = center[1] + c[1] + Math.cos(phi) * rr * 0.6;
       const pz = center[2] + c[2] + Math.sin(phi) * Math.sin(theta) * rr;
       dummy.position.set(px, py, pz);
       dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
@@ -1048,6 +1052,7 @@ function Canopy({
 const LIMB_STYLE: Record<Limb["kind"], { rBase: number; rTip: number; bow: number }> = {
   fork: { rBase: 0.19, rTip: 0.1, bow: 0.18 },
   branch: { rBase: 0.1, rTip: 0.028, bow: 0.32 },
+  sub: { rBase: 0.052, rTip: 0.016, bow: 0.42 },
   twig: { rBase: 0.05, rTip: 0.015, bow: 0.32 },
   flare: { rBase: 0.17, rTip: 0.04, bow: -0.55 },
   root: { rBase: 0.06, rTip: 0.018, bow: -0.28 },

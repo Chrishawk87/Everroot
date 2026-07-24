@@ -13,7 +13,7 @@ export interface PositionedNode {
 export interface Limb {
   from: Vec3;
   to: Vec3;
-  kind: "branch" | "twig" | "root" | "fork" | "flare";
+  kind: "branch" | "sub" | "twig" | "root" | "fork" | "flare";
 }
 
 export interface Fork {
@@ -99,13 +99,14 @@ export function computeGrowth(graph: ForestGraph): GrowthMetrics {
 
   // Overall scale climbs with the legacy score, saturating so an enormous life
   // still tops out as a single grand tree rather than growing without limit.
+  // The ceiling is deliberately tall: a full life should TOWER over the viewer.
   const growth01 = saturate(score, 260); // ~0.14 @40, ~0.62 @250, ~0.90 @600
-  const trunkHeight = 0.4 + 8.1 * growth01;
+  const trunkHeight = 0.5 + 10.5 * growth01;
 
   // Girth: proportional to height (always gorgeous) plus a subtle thickening
   // from total memory volume — "every memory adds a ring to the trunk."
   const girth01 = saturate(memoryCount, 55);
-  const trunkRadiusBottom = trunkHeight * 0.1 + girth01 * 0.08;
+  const trunkRadiusBottom = trunkHeight * 0.085 + girth01 * 0.08;
   // 0.7 was the old fully-grown base radius; normalising against it keeps the
   // hand-tuned branch proportions intact and scales limbs up/down from there.
   const girthScale = Math.max(0.28, trunkRadiusBottom / 0.7);
@@ -188,11 +189,14 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
   // forks (not the central pole), which is what gives the wide, spreading
   // silhouette. The gap between the forks is where the low sun burns through.
   const H = trunkHeight;
-  const forkHeight = H * 0.34;
+  // Split higher up so there's a real, tall trunk before the crown — a grand
+  // tree, not a low slingshot. The forks then sweep UP and out, reaching above
+  // the trunk's nominal height so the whole tree reads as towering.
+  const forkHeight = H * 0.44;
   const forkBase: Vec3 = [0, forkHeight, 0];
   const forks: Fork[] = [
-    { base: forkBase, tip: [H * 0.42, H * 0.9, H * 0.07] },
-    { base: forkBase, tip: [-H * 0.44, H * 0.88, -H * 0.06] },
+    { base: forkBase, tip: [H * 0.34, H * 1.04, H * 0.05] },
+    { base: forkBase, tip: [-H * 0.36, H * 1.02, -H * 0.05] },
   ];
   for (const f of forks) limbs.push({ from: f.base, to: f.tip, kind: "fork" });
 
@@ -281,6 +285,28 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
     branchTip.set(branch.id, tip);
     positioned.push({ node: branch, position: tip, scale: 0.5, parentId: trunk!.id });
     limbs.push({ from: base, to: tip, kind: "branch" });
+
+    // Secondary boughs fork off each main branch, reaching further up and out,
+    // so an ancient tree reads as a full, layered crown rather than a bare
+    // armature. Purely structural (no memory hangs on them); a fuller chapter
+    // grows one or two more of them.
+    const subCount = 1 + Math.round(hash01(branch.id, 21) * (0.6 + density));
+    for (let s = 0; s < subCount; s++) {
+      const at = 0.45 + hash01(branch.id, 30 + s) * 0.32;
+      const from: Vec3 = [
+        base[0] + (tip[0] - base[0]) * at,
+        base[1] + (tip[1] - base[1]) * at,
+        base[2] + (tip[2] - base[2]) * at,
+      ];
+      const spin = angle + (s - 0.5) * 1.1 + hash01(branch.id, 40 + s) * 0.6;
+      const slen = length * (0.42 + hash01(branch.id, 50 + s) * 0.4);
+      const subTip: Vec3 = [
+        from[0] + Math.cos(spin) * slen * 0.7 + outX * slen * 0.32,
+        from[1] + 0.3 + hash01(branch.id, 60 + s) * 0.6,
+        from[2] + Math.sin(spin) * slen,
+      ];
+      limbs.push({ from, to: subTip, kind: "sub" });
+    }
 
     // Leaves / flowers / fruit cluster around the branch tip; a fuller chapter
     // wears a slightly wider, richer cluster.
