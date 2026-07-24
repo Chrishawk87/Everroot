@@ -47,15 +47,18 @@ interface Atmosphere {
 // The resting daytime look is a warm golden hour: a low sun sitting behind the
 // tree, an amber horizon, and rich (not washed-out) greens — the palette of the
 // concept art. Night, dawn and deep-sunset keyframes still cycle around it.
+// A LOW, deep golden hour — even the resting "daytime" look sits the sun near
+// the horizon behind the tree so the sky glows amber rather than blowing out to
+// white overhead. This is the unmistakable golden palette of the concept art.
 const DAY_ATMOSPHERE: Atmosphere = {
-  sun: [-26, 12, -20],
-  background: "#e7cd97",
-  sky: { turbidity: 8, rayleigh: 2.3, mieCoefficient: 0.021, mieDirectionalG: 0.9 },
-  fog: { color: "#e6d2a0", near: 44, far: 140 },
-  ambient: 0.32,
-  hemi: { sky: "#f4e2b4", ground: "#43502e", intensity: 0.5 },
-  dir: { color: "#ffd79a", intensity: 1.85 },
-  motes: { color: "#ffe6b0", opacity: 0.4 },
+  sun: [-30, 6.5, -22],
+  background: "#e6c489",
+  sky: { turbidity: 6, rayleigh: 1.9, mieCoefficient: 0.024, mieDirectionalG: 0.93 },
+  fog: { color: "#e4c88e", near: 44, far: 140 },
+  ambient: 0.3,
+  hemi: { sky: "#f2dca6", ground: "#3f4a2c", intensity: 0.48 },
+  dir: { color: "#ffca82", intensity: 1.7 },
+  motes: { color: "#ffe2a6", opacity: 0.42 },
 };
 
 const MEMORIAL_ATMOSPHERE: Atmosphere = {
@@ -170,13 +173,16 @@ const CATEGORY_COLORS: Record<string, string> = {
 const MEMORY_KINDS = new Set(["LEAF", "FLOWER", "FRUIT", "PHOTO", "MEMORY", "MEMORY_MOMENT"]);
 
 // Crown fullness by growth stage: radius + decorative leaf count.
+// Crown radii scale with the taller trunks above so the canopy spreads like a
+// vast umbrella overhead (the "branches like embracing arms" of the brief).
+// Counts bumped a little so the larger crowns stay lush, not sparse.
 const CROWN: Record<GrowthStage, { r: number; count: number }> = {
   SEED: { r: 0, count: 0 },
-  SPROUT: { r: 0.55, count: 70 },
-  SAPLING: { r: 1.15, count: 280 },
-  YOUNG_TREE: { r: 1.9, count: 700 },
-  MATURE_TREE: { r: 2.6, count: 1350 },
-  ANCIENT_TREE: { r: 3.3, count: 2000 },
+  SPROUT: { r: 0.8, count: 90 },
+  SAPLING: { r: 1.8, count: 360 },
+  YOUNG_TREE: { r: 3.0, count: 900 },
+  MATURE_TREE: { r: 4.2, count: 1700 },
+  ANCIENT_TREE: { r: 5.6, count: 2600 },
 };
 const STAGE_INDEX: Record<GrowthStage, number> = {
   SEED: 0, SPROUT: 1, SAPLING: 2, YOUNG_TREE: 3, MATURE_TREE: 4, ANCIENT_TREE: 5,
@@ -558,10 +564,13 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 
   // Frame the tall tree well on portrait phones (pull back + slightly wider lens),
   // tighter and more cinematic on landscape/desktop.
+  // Camera sits low and pulls back far enough that the (now much taller) tree
+  // rises well above the frame — you look UP at it and feel small, rather than
+  // seeing the whole thing comfortably at eye level.
   const isPortrait = typeof window !== "undefined" && window.innerHeight >= window.innerWidth;
   const camInit = isPortrait
-    ? { position: [4.5, 4.4, 11.5] as Vec3, fov: 55 }
-    : { position: [6, 3.6, 8] as Vec3, fov: 48 };
+    ? { position: [7, 5.5, 18] as Vec3, fov: 58 }
+    : { position: [10, 4.5, 14] as Vec3, fov: 50 };
 
   return (
     <Canvas
@@ -569,7 +578,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       dpr={[1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.92 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.86 }}
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={[atmo.background]} />
@@ -587,19 +596,19 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0004}
         shadow-camera-near={1}
-        shadow-camera-far={90}
-        shadow-camera-left={-10}
-        shadow-camera-right={10}
-        shadow-camera-top={12}
-        shadow-camera-bottom={-4}
+        shadow-camera-far={120}
+        shadow-camera-left={-18}
+        shadow-camera-right={18}
+        shadow-camera-top={22}
+        shadow-camera-bottom={-6}
       />
       {/* Strong warm rim light from low behind the tree: the golden-hour sun
           rakes through the canopy and lights the silhouette from the back,
           just like the concept. No shadow — purely cinematic separation. */}
-      <directionalLight position={[-14, 4, -16]} intensity={1.5} color="#ffb867" />
+      <directionalLight position={[-14, 4, -16]} intensity={1.3} color="#ffb85e" />
       {/* Low sun-glow point tucked behind the trunk fork so light appears to
           burst through the split of the tree toward the viewer. */}
-      <pointLight position={[0, 2.4, -3]} intensity={2.2} distance={22} decay={1.6} color="#ffcf7a" />
+      <pointLight position={[0, 2.4, -3]} intensity={1.6} distance={22} decay={1.6} color="#ffc873" />
 
       {/* The day-cycle drives all of the above; memorial forests hold at dusk. */}
       <SceneClock
@@ -695,18 +704,18 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         zoomSpeed={0.8}
         autoRotate={!focusPos}
         autoRotateSpeed={0.28}
-        minDistance={2.5}
-        maxDistance={30}
+        minDistance={4}
+        maxDistance={48}
         minPolarAngle={0.25}
         maxPolarAngle={Math.PI / 2.05}
-        target={[0, layout.trunkHeight * 0.55, 0]}
+        target={[0, layout.trunkHeight * 0.5, 0]}
       />
       <CameraRig focusPos={focusPos} />
 
       {/* Cinematic pass: bloom lifts the glowing memories, stars and low sun;
           SMAA cleans edges; a soft vignette focuses the eye on the tree. */}
       <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom mipmapBlur luminanceThreshold={0.72} luminanceSmoothing={0.28} intensity={0.7} radius={0.7} />
+        <Bloom mipmapBlur luminanceThreshold={0.78} luminanceSmoothing={0.26} intensity={0.66} radius={0.7} />
         <SMAA />
         <Vignette offset={0.28} darkness={0.62} eskil={false} />
       </EffectComposer>
@@ -1696,6 +1705,11 @@ function StarNode({
 
 /* ---------- Interactive memory nodes ---------- */
 
+// Shared scratch vectors so the per-frame label logic below allocates nothing.
+const _lblWorld = new THREE.Vector3();
+const _lblCamDir = new THREE.Vector3();
+const _lblToNode = new THREE.Vector3();
+
 function NodeGlyph({
   positioned,
   selected,
@@ -1715,6 +1729,7 @@ function NodeGlyph({
   const [hovered, setHovered] = useState(false);
   const ref = useRef<THREE.Group>(null);
   const haloRef = useRef<THREE.Mesh>(null);
+  const labelRef = useRef<HTMLDivElement>(null);
   const appear = useRef(0);
 
   useFrame((state, delta) => {
@@ -1731,6 +1746,25 @@ function NodeGlyph({
     if (haloRef.current) {
       const p = 1 + Math.sin(t * 2.2) * 0.07;
       haloRef.current.scale.setScalar(p);
+    }
+    // Declutter: with dozens of memories, showing every title at once turns the
+    // canopy into an unreadable smear. Instead the ambient title only appears
+    // for the memory the camera is actually looking AT — the one near the
+    // center of view and reasonably close. As you orbit, titles light up one or
+    // two at a time, so the tree always reads as real moments without clutter.
+    if (labelRef.current) {
+      const cam = state.camera;
+      ref.current.getWorldPosition(_lblWorld);
+      const dist = cam.position.distanceTo(_lblWorld);
+      cam.getWorldDirection(_lblCamDir);
+      _lblToNode.copy(_lblWorld).sub(cam.position).normalize();
+      const aim = _lblCamDir.dot(_lblToNode); // 1 = dead center of view
+      // Fade in only within ~9° of the view center and inside a soft distance
+      // band; multiply the two so edge-of-view or far titles vanish smoothly.
+      const aimF = THREE.MathUtils.clamp((aim - 0.988) / (1 - 0.988), 0, 1);
+      const distF = THREE.MathUtils.clamp(1 - (dist - 6) / 14, 0, 1);
+      const op = aimF * distF * 0.72;
+      labelRef.current.style.opacity = op.toFixed(3);
     }
   });
 
@@ -1781,9 +1815,13 @@ function NodeGlyph({
         </Html>
       ) : isMemory ? (
         <Html center distanceFactor={15} position={[0, scale + 0.5, 0]} zIndexRange={[10, 0]}>
-          <div className="pointer-events-none select-none whitespace-nowrap font-serif text-[11px] text-parchment/70 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]">
+          <div
+            ref={labelRef}
+            style={{ opacity: 0 }}
+            className="pointer-events-none select-none whitespace-nowrap font-serif text-[11px] text-parchment/90 [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]"
+          >
             {node.title}
-            {year ? <span className="text-parchment/40"> · {year}</span> : null}
+            {year ? <span className="text-parchment/50"> · {year}</span> : null}
           </div>
         </Html>
       ) : null}

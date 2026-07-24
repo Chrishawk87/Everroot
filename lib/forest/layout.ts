@@ -33,13 +33,16 @@ export interface ForestLayout {
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
+// Scaled up dramatically so a mature tree TOWERS over the visitor — the brief
+// asks that the user feel small beneath an enormous ancient trunk. These heights
+// (in world units) are read directly by the renderer and the camera framing.
 const TRUNK_HEIGHT: Record<GrowthStage, number> = {
   SEED: 0.5,
-  SPROUT: 1.1,
-  SAPLING: 1.9,
-  YOUNG_TREE: 2.7,
-  MATURE_TREE: 3.5,
-  ANCIENT_TREE: 4.4,
+  SPROUT: 1.6,
+  SAPLING: 3.0,
+  YOUNG_TREE: 4.6,
+  MATURE_TREE: 6.2,
+  ANCIENT_TREE: 8.0,
 };
 
 // Deterministic 0..1 pseudo-random from a string id so layouts are stable.
