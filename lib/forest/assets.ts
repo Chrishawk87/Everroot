@@ -133,6 +133,11 @@ export const MODELS: Record<string, ModelAsset> = {
   flower_b: { id: "flower_b", url: "/assets/models/plants/flower_b.glb" },
   // Distant terrain silhouette (scanned cliff/mountain rock, scaled large).
   mountain: { id: "mountain", url: "/assets/models/terrain/mountain.glb" },
+  // Living-world props + creatures. Lanterns line the paths and glow after dark;
+  // birds and butterflies are cloned into animated flocks by the Life layer.
+  lantern: { id: "lantern", url: "/assets/models/props/lantern.glb" },
+  bird: { id: "bird", url: "/assets/models/creatures/bird.glb" },
+  butterfly: { id: "butterfly", url: "/assets/models/creatures/butterfly.glb" },
 };
 
 /** All background tree ids, for the scatter system to draw from. */

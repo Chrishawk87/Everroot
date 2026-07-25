@@ -14,7 +14,12 @@ import {
   Terrain,
   Water,
   Scatter,
+  Waterfall,
+  Lanterns,
+  Birds,
+  Butterflies,
   type ScatterItem,
+  type LanternPlacement,
 } from "@/components/forest/assets";
 
 const COLORS: Record<string, string> = {
@@ -616,6 +621,35 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     return out;
   }, []);
 
+  // Lanterns line a gentle ring of the meadow paths, with a small cluster
+  // gathered by the lakeside — physical props that glow warmer after dark.
+  const lanterns = useMemo<LanternPlacement[]>(() => {
+    const out: LanternPlacement[] = [];
+    // path ring around the clearing
+    const RING = 11;
+    for (let i = 0; i < RING; i++) {
+      const a = (i / RING) * Math.PI * 2 + 0.2;
+      const r = 12 + hash01(`ln${i}`, 7) * 2.5;
+      out.push({
+        position: [Math.cos(a) * r, 0, Math.sin(a) * r],
+        rotationY: hash01(`ln${i}`, 11) * Math.PI * 2,
+        scale: 0.9 + hash01(`ln${i}`, 5) * 0.4,
+        phase: hash01(`ln${i}`, 13) * Math.PI * 2,
+      });
+    }
+    // lakeside cluster near the water at [-24, 0, 20]
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2;
+      out.push({
+        position: [-24 + Math.cos(a) * 10.5, 0, 20 + Math.sin(a) * 10.5],
+        rotationY: hash01(`lk${i}`, 11) * Math.PI * 2,
+        scale: 0.95 + hash01(`lk${i}`, 5) * 0.35,
+        phase: hash01(`lk${i}`, 13) * Math.PI * 2,
+      });
+    }
+    return out;
+  }, []);
+
   const focusPos = useMemo<Vec3 | null>(() => {
     if (!focusId) return null;
     const p = layout.positioned.find((n) => n.node.id === focusId);
@@ -741,6 +775,22 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       </AssetBoundary>
       <AssetBoundary label="lake">
         <Water />
+      </AssetBoundary>
+      {/* Waterfall feeds the lake — a shader cascade (the accepted exception to
+          the loaded-asset rule, since falling water reads as motion). */}
+      <Waterfall top={[-24, 7.5, 12]} height={7.4} width={2.8} />
+
+      {/* Lanterns line the paths + lakeside and glow after dark. */}
+      <AssetBoundary label="lanterns">
+        <Lanterns placements={lanterns} nightRef={nightRef} />
+      </AssetBoundary>
+
+      {/* Living flocks: birds wheeling overhead, butterflies over the flowers. */}
+      <AssetBoundary label="birds">
+        <Birds count={7} />
+      </AssetBoundary>
+      <AssetBoundary label="butterflies">
+        <Butterflies count={14} />
       </AssetBoundary>
 
       <SkyClouds />

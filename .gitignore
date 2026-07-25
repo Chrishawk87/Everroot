@@ -41,3 +41,6 @@ yarn-error.log*
 # raw texture downloads dropped in repo root (optimized copies live in public/assets)
 /*_diff.jpg
 /*_diff.jpg *
+
+# raw Higgsfield downloads staged here before optimization (optimized copies live in public/assets)
+/_incoming/
