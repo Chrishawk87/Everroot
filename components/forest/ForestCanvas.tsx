@@ -621,34 +621,28 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     return out;
   }, []);
 
-  // Lanterns line a gentle ring of the meadow paths, with a small cluster
-  // gathered by the lakeside — physical props that glow warmer after dark.
+  // Memory lanterns: one hangs from the branch beside each memory, dangling just
+  // below the leaf it belongs to and lit from within. These ARE the memories
+  // made visible in the canopy — not path props on the ground. Each sways gently
+  // on its own phase and glows warm day and night, blooming brighter after dark.
   const lanterns = useMemo<LanternPlacement[]>(() => {
-    const out: LanternPlacement[] = [];
-    // path ring around the clearing
-    const RING = 11;
-    for (let i = 0; i < RING; i++) {
-      const a = (i / RING) * Math.PI * 2 + 0.2;
-      const r = 12 + hash01(`ln${i}`, 7) * 2.5;
-      out.push({
-        position: [Math.cos(a) * r, 0, Math.sin(a) * r],
-        rotationY: hash01(`ln${i}`, 11) * Math.PI * 2,
-        scale: 0.9 + hash01(`ln${i}`, 5) * 0.4,
-        phase: hash01(`ln${i}`, 13) * Math.PI * 2,
-      });
-    }
-    // lakeside cluster near the water at [-24, 0, 20]
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      out.push({
-        position: [-24 + Math.cos(a) * 10.5, 0, 20 + Math.sin(a) * 10.5],
-        rotationY: hash01(`lk${i}`, 11) * Math.PI * 2,
-        scale: 0.95 + hash01(`lk${i}`, 5) * 0.35,
-        phase: hash01(`lk${i}`, 13) * Math.PI * 2,
-      });
-    }
-    return out;
-  }, []);
+    return layout.positioned.map((p, i) => {
+      const key = `lantern${p.node.id}`;
+      // dangle the lantern a little below and just outboard of the anchor point,
+      // so it reads as hung from the bough rather than sitting on it.
+      const drop = 0.9 + hash01(key, 5) * 0.5;
+      return {
+        position: [
+          p.position[0] + (hash01(key, 17) - 0.5) * 0.4,
+          p.position[1] - drop,
+          p.position[2] + (hash01(key, 19) - 0.5) * 0.4,
+        ] as Vec3,
+        rotationY: hash01(key, 11) * Math.PI * 2,
+        scale: 0.4 + hash01(key, 7) * 0.18,
+        phase: hash01(key, 13) * Math.PI * 2,
+      };
+    });
+  }, [layout.positioned]);
 
   const focusPos = useMemo<Vec3 | null>(() => {
     if (!focusId) return null;
@@ -780,7 +774,8 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           the loaded-asset rule, since falling water reads as motion). */}
       <Waterfall top={[-24, 7.5, 12]} height={7.4} width={2.8} />
 
-      {/* Lanterns line the paths + lakeside and glow after dark. */}
+      {/* Memory lanterns hang from the boughs — one per memory — lit from within
+          and blooming warmer after dark. */}
       <AssetBoundary label="lanterns">
         <Lanterns placements={lanterns} nightRef={nightRef} />
       </AssetBoundary>

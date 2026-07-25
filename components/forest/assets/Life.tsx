@@ -112,9 +112,10 @@ export function Waterfall({
 }
 
 // ---------------------------------------------------------------------------
-// Lanterns — physical lantern props that line the meadow paths and glow warmer
-// after dark. Each is a loaded GLB clone inside a group that sways gently; a
-// cheap (shadowless) warm point light rides along and brightens with nightRef.
+// Lanterns — a memory made visible. One hangs from the bough beside each memory,
+// dangling on a short cord and lit from within by a warm glowing core. Each is a
+// loaded GLB clone that swings gently like a pendulum from its cord; a cheap
+// (shadowless) warm point light rides along, always lit and blooming after dark.
 // ---------------------------------------------------------------------------
 export interface LanternPlacement {
   position: Vec3;
@@ -127,24 +128,35 @@ export interface LanternPlacement {
 function OneLantern({
   placement,
   nightRef,
+  castLight = true,
 }: {
   placement: LanternPlacement;
   nightRef?: React.MutableRefObject<number>;
+  /** Only a capped subset carry a real point light (mobile light budget); the
+   *  rest still glow via their emissive core + bloom. */
+  castLight?: boolean;
 }) {
   const { scene } = useGLTF(MODELS.lantern.url);
-  const groupRef = useRef<THREE.Group>(null);
+  const swingRef = useRef<THREE.Group>(null);
   const lightRef = useRef<THREE.PointLight>(null);
+  const coreRef = useRef<THREE.MeshStandardMaterial>(null);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    if (groupRef.current) {
-      groupRef.current.rotation.z = Math.sin(t * 0.8 + placement.phase) * 0.04;
+    const night = nightRef?.current ?? 0;
+    // Pendulum swing from the top of the cord (the swing group pivots at y=0,
+    // and the lantern hangs below it), so it reads as truly suspended.
+    if (swingRef.current) {
+      swingRef.current.rotation.z = Math.sin(t * 0.7 + placement.phase) * 0.06;
+      swingRef.current.rotation.x = Math.cos(t * 0.5 + placement.phase) * 0.04;
     }
+    const flicker = 0.92 + Math.sin(t * 5 + placement.phase) * 0.08;
     if (lightRef.current) {
-      const night = nightRef?.current ?? 0;
-      // Always faintly lit; blooms after dark.
-      const flicker = 0.9 + Math.sin(t * 6 + placement.phase) * 0.06;
-      lightRef.current.intensity = (0.35 + night * 2.4) * flicker;
+      // Always clearly lit — these are memories — and it blooms after dark.
+      lightRef.current.intensity = (0.9 + night * 2.2) * flicker;
+    }
+    if (coreRef.current) {
+      coreRef.current.emissiveIntensity = (1.6 + night * 2.2) * flicker;
     }
   });
 
@@ -154,17 +166,40 @@ function OneLantern({
       rotation={[0, placement.rotationY, 0]}
       scale={placement.scale}
     >
-      <group ref={groupRef}>
-        <Clone object={scene} castShadow receiveShadow />
+      {/* the cord's top pivot sits at the group origin (the branch); everything
+          hangs below it and swings as one pendulum */}
+      <group ref={swingRef}>
+        {/* short hanging cord up to the bough */}
+        <mesh position={[0, 0.55, 0]}>
+          <cylinderGeometry args={[0.015, 0.015, 1.1, 6]} />
+          <meshStandardMaterial color="#2a1f12" roughness={1} />
+        </mesh>
+        {/* the lantern body, hung at the bottom of the cord */}
+        <group position={[0, -0.4, 0]}>
+          <Clone object={scene} castShadow receiveShadow />
+          {/* warm glowing core so the lantern reads as lit from within */}
+          <mesh position={[0, 0.15, 0]}>
+            <sphereGeometry args={[0.14, 12, 12]} />
+            <meshStandardMaterial
+              ref={coreRef}
+              color="#ffdca0"
+              emissive="#ffb867"
+              emissiveIntensity={1.6}
+              toneMapped={false}
+            />
+          </mesh>
+          {castLight ? (
+            <pointLight
+              ref={lightRef}
+              color="#ffb867"
+              intensity={1.0}
+              distance={7}
+              decay={2}
+              position={[0, 0.15, 0]}
+            />
+          ) : null}
+        </group>
       </group>
-      <pointLight
-        ref={lightRef}
-        color="#ffb867"
-        intensity={0.5}
-        distance={9}
-        decay={2}
-        position={[0, 1.1, 0]}
-      />
     </group>
   );
 }
@@ -172,14 +207,33 @@ function OneLantern({
 export function Lanterns({
   placements,
   nightRef,
+  maxLights = 8,
 }: {
   placements: LanternPlacement[];
   nightRef?: React.MutableRefObject<number>;
+  /** Cap on real point lights to stay within the mobile light budget. */
+  maxLights?: number;
 }) {
+  // Give real lights to the lanterns nearest the tree centre first, so the
+  // canopy core is warmly lit; the rest rely on their emissive glow + bloom.
+  const litSet = useMemo(() => {
+    const idx = placements.map((p, i) => ({
+      i,
+      d: p.position[0] * p.position[0] + p.position[2] * p.position[2],
+    }));
+    idx.sort((a, b) => a.d - b.d);
+    return new Set(idx.slice(0, maxLights).map((x) => x.i));
+  }, [placements, maxLights]);
+
   return (
     <>
       {placements.map((p, i) => (
-        <OneLantern key={i} placement={p} nightRef={nightRef} />
+        <OneLantern
+          key={i}
+          placement={p}
+          nightRef={nightRef}
+          castLight={litSet.has(i)}
+        />
       ))}
     </>
   );

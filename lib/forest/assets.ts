@@ -69,46 +69,42 @@ export const HDRI: Record<string, HdriAsset> = {
 // the leaf cards, and the water.
 // ---------------------------------------------------------------------------
 export const MATERIALS: Record<string, MaterialAsset> = {
+  // Only the albedo (base color) map is installed today. The old entries for
+  // normal/roughness/ao/height pointed at files that were never delivered, and
+  // because `useTexture` throws on any 404 that omitted the ENTIRE ground plane
+  // — which is why the world read as a dark void. The manifest now lists only
+  // what is on disk; extra relief comes from a roughness scalar. Drop a
+  // normal.jpg etc. back in here the moment it's installed and it lights up.
   forest_floor: {
     id: "forest_floor",
     maps: {
       map: "/assets/materials/forest_floor/albedo.jpg",
-      normalMap: "/assets/materials/forest_floor/normal.jpg",
-      roughnessMap: "/assets/materials/forest_floor/roughness.jpg",
-      aoMap: "/assets/materials/forest_floor/ao.jpg",
-      displacementMap: "/assets/materials/forest_floor/height.jpg",
     },
     repeat: [22, 22],
-    displacementScale: 0.35,
+    roughness: 0.95,
+    metalness: 0,
   },
   bark: {
     id: "bark",
     maps: {
       map: "/assets/materials/bark/albedo.jpg",
-      normalMap: "/assets/materials/bark/normal.jpg",
-      roughnessMap: "/assets/materials/bark/roughness.jpg",
-      aoMap: "/assets/materials/bark/ao.jpg",
     },
     repeat: [2, 6],
+    roughness: 0.92,
+    metalness: 0,
   },
-  leaf: {
-    id: "leaf",
-    maps: {
-      // Leaf atlas / single-leaf cutout with alpha (PNG/WebP with transparency).
-      map: "/assets/materials/leaf/albedo.png",
-      normalMap: "/assets/materials/leaf/normal.png",
-      roughnessMap: "/assets/materials/leaf/roughness.png",
-    },
-  },
+  // The lake surface is generated in-shader (a scrolling canvas normal map), so
+  // it needs no installed files — see components/forest/assets/Terrain.tsx. This
+  // is the same accepted exception as the waterfall: moving water reads as
+  // motion, not scanned geometry.
   water: {
     id: "water",
     maps: {
-      map: "/assets/materials/water/albedo.jpg",
-      normalMap: "/assets/materials/water/normal.jpg",
+      map: "/assets/materials/forest_floor/albedo.jpg", // unused; kept non-empty for the type
     },
     repeat: [6, 6],
     roughness: 0.06,
-    metalness: 0.2,
+    metalness: 0.6,
   },
 };
 
