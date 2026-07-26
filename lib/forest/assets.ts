@@ -116,6 +116,13 @@ export const MATERIALS: Record<string, MaterialAsset> = {
 // above. These models are the surrounding living world.
 // ---------------------------------------------------------------------------
 export const MODELS: Record<string, ModelAsset> = {
+  // THE HERO TREE — the one canonical, authored central tree (SpeedTree →
+  // Blender conform → hero_tree.glb). This is the ONE exception to "the central
+  // tree is not a model": per the EverRoot Studios pipeline the hero tree now
+  // ORIGINATES as an authored asset and the app only *modifies* it (girth,
+  // limb extension/tilt, scars, vein glow) from the memory graph. Renders
+  // nothing until the .glb is installed (see components/forest/HeroTree.tsx).
+  hero_tree: { id: "hero_tree", url: "/assets/models/hero/hero_tree.glb" },
   // Background forest — a small library so the community reads as varied.
   tree_a: { id: "tree_a", url: "/assets/models/trees/tree_a.glb" },
   tree_b: { id: "tree_b", url: "/assets/models/trees/tree_b.glb" },
