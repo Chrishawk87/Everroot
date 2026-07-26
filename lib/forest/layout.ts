@@ -130,7 +130,18 @@ export function computeGrowth(graph: ForestGraph): GrowthMetrics {
   // still tops out as a single grand tree rather than growing without limit.
   // The ceiling is deliberately tall: a full life should TOWER over the viewer.
   const growth01 = saturate(score, 260); // ~0.14 @40, ~0.62 @250, ~0.90 @600
-  const trunkHeight = 0.5 + 10.5 * growth01;
+  const baseHeight = 0.5 + 10.5 * growth01;
+
+  // EverRoot IS the tree — it is the monument, not scenery. The whole scene is
+  // composed around it, so the tree is rendered at hero scale and never reads as
+  // a twig even for a young account. HERO enlarges the whole tree; the floor
+  // keeps a real (non-seed) tree grand. A true seed still starts small so the
+  // cinematic birth sequence can grow it. Every camera/fog/shadow/environment
+  // dimension downstream is derived from this height, so the framing stays
+  // consistent at any size.
+  const isSeedState = memoryCount === 0 && score < 12;
+  const HERO = 2.6;
+  const trunkHeight = (isSeedState ? baseHeight : Math.max(baseHeight, 3.0)) * HERO;
 
   // Girth: proportional to height (always gorgeous) plus a subtle thickening
   // from total memory volume — "every memory adds a ring to the trunk."
@@ -145,8 +156,11 @@ export function computeGrowth(graph: ForestGraph): GrowthMetrics {
   // (branches) the tree carries; a busier life wears a lusher, wider crown.
   const crownFullness = 0.35 + 0.65 * saturate(memoryCount + branchCount * 4, 70);
   let crownRadius = trunkHeight * 0.66 + crownFullness * 0.6;
+  // A dense, layered crown — the tree should read as full and deep, not sparse.
+  // Density is capped high (instanced, so thousands of leaves stay cheap) and
+  // scaled to the crown area so a bigger crown fills in proportionally.
   let crownCount = Math.round(
-    Math.min(3200, 82 * crownRadius * crownRadius * (0.4 + 0.6 * crownFullness)),
+    Math.min(6000, 34 * crownRadius * crownRadius * (0.4 + 0.6 * crownFullness)),
   );
   // A true seed (no memories, essentially no score) stays a seed in the soil —
   // the cinematic birth sequence owns that moment, so no crown yet.
@@ -391,6 +405,27 @@ export function computeLayout(graph: ForestGraph): ForestLayout {
         from[2] + Math.sin(spin) * slen,
       ];
       limbs.push({ from, to: subTip, kind: "sub" });
+
+      // Tertiary twigs fork off each secondary bough, building a second, deeper
+      // layer of the crown so the canopy reads with real depth instead of a
+      // single shell of leaves. These also carry foliage anchors.
+      const twigCount = 1 + Math.round(hash01(branch.id, 70 + s) * (0.5 + density));
+      for (let w = 0; w < twigCount; w++) {
+        const twAt = 0.5 + hash01(branch.id, 80 + s * 3 + w) * 0.4;
+        const twFrom: Vec3 = [
+          from[0] + (subTip[0] - from[0]) * twAt,
+          from[1] + (subTip[1] - from[1]) * twAt,
+          from[2] + (subTip[2] - from[2]) * twAt,
+        ];
+        const twSpin = spin + (w - 0.5) * 1.3 + hash01(branch.id, 90 + w) * 0.7;
+        const twLen = slen * (0.4 + hash01(branch.id, 100 + w) * 0.35);
+        const twTip: Vec3 = [
+          twFrom[0] + Math.cos(twSpin) * twLen * 0.7 + outX * twLen * 0.25,
+          twFrom[1] + 0.25 + hash01(branch.id, 110 + w) * 0.5,
+          twFrom[2] + Math.sin(twSpin) * twLen,
+        ];
+        limbs.push({ from: twFrom, to: twTip, kind: "sub" });
+      }
     }
 
     // Leaves / flowers / fruit cluster around the branch tip; a fuller chapter

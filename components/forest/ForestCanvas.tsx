@@ -21,6 +21,7 @@ import {
   type ScatterItem,
   type LanternPlacement,
 } from "@/components/forest/assets";
+import { LegacyPlaza, StonePath, Stream, WoodenBridge, Fireflies } from "@/components/forest/assets/Composition";
 
 const COLORS: Record<string, string> = {
   SEED: "#c9a86a",
@@ -517,6 +518,11 @@ interface Props {
 
 export default function ForestCanvas({ graph, selectedId, focusId, onSelect, memorial = false }: Props) {
   const layout = useMemo(() => computeLayout(graph), [graph]);
+  // The tree's height is the master dimension of the whole composition — camera,
+  // fog, shadows, the Legacy Plaza, the path, the stream and the surrounding
+  // forest are all sized from it, so the tree always reads as the monument at
+  // the centre of everything.
+  const H = layout.trunkHeight;
   const atmo = memorial ? MEMORIAL_ATMOSPHERE : DAY_ATMOSPHERE;
 
   const bark = useMemo(makeBarkTexture, []);
@@ -574,52 +580,76 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   // Deterministic seeded placements for the surrounding forest, ground detail
   // and distant peaks. The Scatter components load the actual GLB models for
   // these; if a model isn't installed yet, its AssetBoundary simply omits it.
+  // A thin treeline hugs the clearing just past the plaza — enough to close the
+  // world without competing with the tree. It's pulled in tight and kept small
+  // so the eye never wanders out to it.
   const backgroundTrees = useMemo<ScatterItem[]>(() => {
     const out: ScatterItem[] = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 24; i++) {
       const a = hash01(`bt${i}`, 3) * Math.PI * 2;
-      const r = 20 + hash01(`bt${i}`, 7) * 38; // ring the meadow, clear of the center
+      const r = H * 0.95 + hash01(`bt${i}`, 7) * H * 0.9; // ring just past the clearing
       const id = BACKGROUND_TREE_IDS[i % BACKGROUND_TREE_IDS.length];
       out.push({
         url: MODELS[id].url,
         position: [Math.cos(a) * r, -0.2, Math.sin(a) * r],
         rotationY: hash01(`bt${i}`, 11) * Math.PI * 2,
-        scale: 1.1 + hash01(`bt${i}`, 5) * 2.2,
+        scale: 1.0 + hash01(`bt${i}`, 5) * 1.6,
       });
     }
     return out;
-  }, []);
+  }, [H]);
 
+  // Moss, ferns, flowers and soft grass — ONLY within the first ~40 ft of the
+  // trunk (the plaza garden). Random rocks are all but gone (just a couple of
+  // accents); everything else is living groundcover so the base of the monument
+  // reads as tended and alive.
   const groundDetail = useMemo<ScatterItem[]>(() => {
     const out: ScatterItem[] = [];
-    for (let i = 0; i < 140; i++) {
+    // Plants only, biased to ferns/grass/flowers; rocks handled separately below.
+    const PLANT_IDS = ["fern", "grass_clump", "flower_a", "flower_b", "grass_clump", "fern"] as const;
+    const gardenR = Math.min(H * 0.75, 14); // ~first 40 ft around the trunk
+    for (let i = 0; i < 90; i++) {
       const a = hash01(`gd${i}`, 3) * Math.PI * 2;
-      const r = 5 + hash01(`gd${i}`, 7) * 40;
-      const id = GROUND_DETAIL_IDS[i % GROUND_DETAIL_IDS.length];
+      // cluster toward the plaza edge, thinning outward
+      const r = 2.2 + Math.pow(hash01(`gd${i}`, 7), 0.7) * gardenR;
+      const id = PLANT_IDS[i % PLANT_IDS.length];
       out.push({
         url: MODELS[id].url,
         position: [Math.cos(a) * r, 0, Math.sin(a) * r],
         rotationY: hash01(`gd${i}`, 11) * Math.PI * 2,
-        scale: 0.5 + hash01(`gd${i}`, 5) * 1.1,
+        scale: 0.45 + hash01(`gd${i}`, 5) * 0.9,
+      });
+    }
+    // Just two natural stone accents nestled in the garden — no rock field.
+    for (let i = 0; i < 2; i++) {
+      const a = 1.1 + i * 2.4;
+      const r = gardenR * 0.7;
+      out.push({
+        url: MODELS[i === 0 ? "rock_a" : "rock_b"].url,
+        position: [Math.cos(a) * r, 0, Math.sin(a) * r],
+        rotationY: hash01(`rk${i}`, 11) * Math.PI * 2,
+        scale: 0.8 + hash01(`rk${i}`, 5) * 0.6,
       });
     }
     return out;
-  }, []);
+  }, [H]);
 
+  // Mountains are pushed far into the distance and scaled up, so they read as a
+  // hazy massif on the horizon through the fog rather than nearby hills.
   const mountains = useMemo<ScatterItem[]>(() => {
     const out: ScatterItem[] = [];
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI * 2 + hash01(`mt${i}`, 3) * 0.5;
-      const r = 72 + hash01(`mt${i}`, 7) * 24;
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + hash01(`mt${i}`, 3) * 0.5;
+      const r = H * 4.0 + hash01(`mt${i}`, 7) * H * 0.8;
       out.push({
         url: MODELS.mountain.url,
         position: [Math.cos(a) * r, -3, Math.sin(a) * r],
         rotationY: hash01(`mt${i}`, 11) * Math.PI * 2,
-        scale: 14 + hash01(`mt${i}`, 5) * 16,
+        scale: (14 + hash01(`mt${i}`, 5) * 16) * 1.6,
       });
     }
     return out;
-  }, []);
+  }, [H]);
 
   // Memory lanterns: one hangs from the branch beside each memory, dangling just
   // below the leaf it belongs to and lit from within. These ARE the memories
@@ -643,6 +673,23 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       };
     });
   }, [layout.positioned]);
+
+  // Flower positions in the garden — butterflies keep close to these instead of
+  // wandering the whole clearing.
+  const flowerAnchors = useMemo<Vec3[]>(
+    () =>
+      groundDetail
+        .filter((it) => it.url.includes("flower"))
+        .map((it) => [it.position[0], 0, it.position[2]] as Vec3),
+    [groundDetail],
+  );
+
+  // Branch tips birds can land on — the outer end of every real branch, so a
+  // bird occasionally peels out of the sky and settles in the canopy.
+  const perches = useMemo<Vec3[]>(
+    () => layout.limbs.filter((l) => l.kind === "branch").map((l) => l.to),
+    [layout.limbs],
+  );
 
   const focusPos = useMemo<Vec3 | null>(() => {
     if (!focusId) return null;
@@ -670,15 +717,13 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   const dirRef = useRef<THREE.DirectionalLight>(null);
   const skyRef = useRef<React.ElementRef<typeof Sky>>(null);
 
-  // Frame the tall tree well on portrait phones (pull back + slightly wider lens),
-  // tighter and more cinematic on landscape/desktop.
-  // Camera sits low and pulls back far enough that the (now much taller) tree
-  // rises well above the frame — you look UP at it and feel small, rather than
-  // seeing the whole thing comfortably at eye level.
+  // The tree is the monument: every framing dimension is derived from its
+  // height H so it always fills roughly 70% of the opening viewport, whatever
+  // the life's size. The camera sits close and low so you look UP at it.
   const isPortrait = typeof window !== "undefined" && window.innerHeight >= window.innerWidth;
   const camInit = isPortrait
-    ? { position: [7, 5.5, 18] as Vec3, fov: 58 }
-    : { position: [10, 4.5, 14] as Vec3, fov: 50 };
+    ? { position: [H * 0.32, H * 0.5, H * 2.15] as Vec3, fov: 55 }
+    : { position: [H * 0.5, H * 0.46, H * 1.9] as Vec3, fov: 48 };
 
   return (
     <Canvas
@@ -691,7 +736,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     >
       <color attach="background" args={[atmo.background]} />
       <Sky ref={skyRef} distance={450000} sunPosition={atmo.sun} turbidity={atmo.sky.turbidity} rayleigh={atmo.sky.rayleigh} mieCoefficient={atmo.sky.mieCoefficient} mieDirectionalG={atmo.sky.mieDirectionalG} />
-      <fog attach="fog" args={[atmo.fog.color, atmo.fog.near, atmo.fog.far]} />
+      {/* Fog is scaled to the tree: it starts just past the tree and thickens
+          toward the distance, so the monument stays crisp while the pushed-back
+          mountains melt into atmosphere. */}
+      <fog attach="fog" args={[atmo.fog.color, H * 1.1, H * 5.2]} />
 
       <ambientLight ref={ambientRef} intensity={atmo.ambient} />
       <hemisphereLight ref={hemiRef} args={[atmo.hemi.sky, atmo.hemi.ground, atmo.hemi.intensity]} />
@@ -704,11 +752,11 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0004}
         shadow-camera-near={1}
-        shadow-camera-far={120}
-        shadow-camera-left={-18}
-        shadow-camera-right={18}
-        shadow-camera-top={22}
-        shadow-camera-bottom={-6}
+        shadow-camera-far={H * 5}
+        shadow-camera-left={-H * 1.4}
+        shadow-camera-right={H * 1.4}
+        shadow-camera-top={H * 1.7}
+        shadow-camera-bottom={-H * 0.4}
       />
       {/* Strong warm rim light from low behind the tree: the golden-hour sun
           rakes through the canopy and lights the silhouette from the back,
@@ -726,6 +774,9 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         hemiRef={hemiRef}
         dirRef={dirRef}
         skyRef={skyRef}
+        fogNear={H * 1.1}
+        fogFar={H * 5.2}
+        worldH={H}
       />
 
       {/* Memories rise into the night sky as a constellation you can read. */}
@@ -782,14 +833,32 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 
       {/* Living flocks: birds wheeling overhead, butterflies over the flowers. */}
       <AssetBoundary label="birds">
-        <Birds count={7} />
+        <Birds count={7} perches={perches} />
       </AssetBoundary>
       <AssetBoundary label="butterflies">
-        <Butterflies count={14} />
+        <Butterflies count={14} anchors={flowerAnchors} />
       </AssetBoundary>
 
       <SkyClouds />
       <Ground />
+
+      {/* --- The monument's architecture, composed AROUND the trunk --- */}
+      {/* A circular Legacy Plaza of natural stone the trunk rises out of, with
+          the roots left to break through its floor. Sized from the tree so it
+          always reads as the monument's court. */}
+      <AssetBoundary label="legacy plaza">
+        <LegacyPlaza radius={Math.max(3.2, H * 0.28)} />
+      </AssetBoundary>
+      {/* A winding stone path approaches from the treeline and draws the eye in
+          toward the trunk. */}
+      <StonePath start={[0, H * 1.5]} plazaRadius={Math.max(3.2, H * 0.28)} />
+      {/* A shallow stream crosses the approach, with a small wooden footbridge
+          where the path steps over it. */}
+      <Stream center={[0, 0.05, H * 0.85]} length={Math.max(14, H * 1.8)} width={2.2} angle={0} />
+      <WoodenBridge position={[0, 0, H * 0.85]} rotationY={Math.PI / 2} span={4.2} width={1.8} />
+      {/* Fireflies wake at dusk and drift low over the garden around the base. */}
+      <Fireflies count={48} radius={Math.min(H * 0.75, 14)} nightRef={nightRef} />
+
       {/* Generational rings ripple outward beneath the floor — one per
           generation of family/heritage — so the roots read as part of a whole
           lineage. */}
@@ -827,6 +896,11 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {/* Decorative full canopy. */}
       {crown.count > 0 ? (
         <Canopy center={crownCenter} radius={crown.r} count={crown.count} leafTex={leafTex} anchors={leafAnchors} />
+      ) : null}
+
+      {/* Volumetric sunlight raking down through the canopy toward the plaza. */}
+      {crown.r > 0 ? (
+        <GodRays center={crownCenter} height={H} sun={atmo.sun} nightRef={nightRef} />
       ) : null}
 
       {/* Golden twinkling memory-lights scattered through the crown. */}
@@ -867,11 +941,11 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         zoomSpeed={0.8}
         autoRotate={!focusPos}
         autoRotateSpeed={0.28}
-        minDistance={4}
-        maxDistance={48}
+        minDistance={H * 0.85}
+        maxDistance={H * 3.2}
         minPolarAngle={0.25}
         maxPolarAngle={Math.PI / 1.3}
-        target={[0, layout.trunkHeight * 0.5, 0]}
+        target={[0, H * 0.5, 0]}
       />
       <CameraRig focusPos={focusPos} />
 
@@ -1109,6 +1183,16 @@ function Canopy({
            transformed.y += sin(uTime * 0.8 + ph) * 0.025;
            #endif`,
         );
+      // Subsurface scattering: leaves glow warm-green where light rakes through
+      // them at grazing/back-lit angles (a cheap fresnel term added to the
+      // emissive), so the canopy shimmers and reads as translucent as the camera
+      // orbits and the light moves — not flat cardboard.
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <emissivemap_fragment>",
+        `#include <emissivemap_fragment>
+         float sss = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 3.0);
+         totalEmissiveRadiance += vec3(0.30, 0.52, 0.18) * sss * 0.6;`,
+      );
       shaderRef.current = shader as unknown as { uniforms: { uTime: { value: number } } };
     };
     mat.needsUpdate = true;
@@ -1149,9 +1233,17 @@ function Branch({
   bark: { map: THREE.Texture; normal: THREE.Texture };
 }) {
   const style = LIMB_STYLE[limb.kind];
-  const geometry = useMemo(() => {
-    const a = new THREE.Vector3(...limb.from);
-    const b = new THREE.Vector3(...limb.to);
+  const groupRef = useRef<THREE.Group>(null);
+  // Geometry is built RELATIVE to the branch base (limb.from) so the group can
+  // pivot at that base — that's what lets the wind rock each branch about where
+  // it joins the tree, instead of shearing it about the world origin.
+  const { geometry, sway, phase } = useMemo(() => {
+    const a = new THREE.Vector3(0, 0, 0);
+    const b = new THREE.Vector3(
+      limb.to[0] - limb.from[0],
+      limb.to[1] - limb.from[1],
+      limb.to[2] - limb.from[2],
+    );
     const mid = a.clone().add(b).multiplyScalar(0.5);
     const len = a.distanceTo(b);
     mid.y += len * style.bow;
@@ -1162,15 +1254,36 @@ function Branch({
     const rTip = style.rTip * girthScale;
     const geo = new THREE.TubeGeometry(curve, 16, rBase, 8, false);
     taperTube(geo, 16, 8, rBase, rTip);
-    return geo;
+    // Only the woody canopy limbs sway; roots and flares are earthbound. Thinner,
+    // longer branches sway more (a small, capped amplitude in radians). A
+    // deterministic phase from the base position makes every branch move on its
+    // own beat, so the whole crown breathes rather than swinging as one.
+    const woody = limb.kind === "branch" || limb.kind === "sub";
+    const sway = woody ? Math.min(0.035, 0.01 + len * 0.003) : 0;
+    const s = Math.sin(limb.from[0] * 12.9898 + limb.from[2] * 78.233) * 43758.5453;
+    const phase = (s - Math.floor(s)) * Math.PI * 2;
+    return { geometry: geo, sway, phase };
   }, [limb, style, girthScale]);
+
+  useFrame((state) => {
+    const g = groupRef.current;
+    if (!g || sway === 0) return;
+    const t = state.clock.elapsedTime;
+    // Two overlapping slow sines = a gentle, non-repeating gust.
+    const w = Math.sin(t * 0.6 + phase) * 0.7 + Math.sin(t * 0.23 + phase * 1.7) * 0.3;
+    g.rotation.z = w * sway;
+    g.rotation.x = Math.cos(t * 0.5 + phase) * sway * 0.5;
+  });
+
   // Roots/flares stay dark and mossy (earthbound); woody parts use a light warm
   // tint so the real bark photo shows through.
   const color = limb.kind === "root" ? "#5c3d26" : limb.kind === "flare" ? "#5a4a30" : "#b39a7c";
   return (
-    <mesh geometry={geometry} castShadow receiveShadow>
-      <meshStandardMaterial color={color} map={bark.map} normalMap={bark.normal} normalScale={BARK_NORMAL_SCALE} roughness={0.92} />
-    </mesh>
+    <group ref={groupRef} position={limb.from}>
+      <mesh geometry={geometry} castShadow receiveShadow>
+        <meshStandardMaterial color={color} map={bark.map} normalMap={bark.normal} normalScale={BARK_NORMAL_SCALE} roughness={0.92} />
+      </mesh>
+    </group>
   );
 }
 
@@ -1371,6 +1484,109 @@ function CanopyShadow({ tex, center, radius }: { tex: THREE.CanvasTexture; cente
       <planeGeometry args={[radius * 3.2, radius * 3.2]} />
       <meshBasicMaterial map={tex} transparent depthWrite={false} opacity={0.85} />
     </mesh>
+  );
+}
+
+// Warm vertical gradient used for the light shafts: bright at the crown, fading
+// to nothing at the floor, with soft feathered sides so each shaft reads as a
+// beam of dusty light rather than a hard quad.
+function makeShaftTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 48;
+  c.height = 256;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, "rgba(255,224,158,0.85)");
+  g.addColorStop(0.55, "rgba(255,214,140,0.28)");
+  g.addColorStop(1, "rgba(255,210,130,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 48, 256);
+  // feather the vertical edges away
+  const h = ctx.createLinearGradient(0, 0, 48, 0);
+  h.addColorStop(0, "rgba(0,0,0,1)");
+  h.addColorStop(0.5, "rgba(0,0,0,0)");
+  h.addColorStop(1, "rgba(0,0,0,1)");
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = h;
+  ctx.fillRect(0, 0, 48, 256);
+  return new THREE.CanvasTexture(c);
+}
+
+// Volumetric-ish sunlight: a handful of warm additive beams slanting down out of
+// the canopy toward the plaza, billboarded to the camera so they always read as
+// shafts. They breathe faintly and fade out at night. This is the accepted cheap
+// approximation of god-rays (no heavy volumetric pass on mobile).
+function GodRays({
+  center,
+  height,
+  sun,
+  nightRef,
+}: {
+  center: Vec3;
+  height: number;
+  sun: Vec3;
+  nightRef: React.MutableRefObject<number>;
+}) {
+  const tex = useMemo(makeShaftTexture, []);
+  const groupRef = useRef<THREE.Group>(null);
+  const matRefs = useRef<(THREE.MeshBasicMaterial | null)[]>([]);
+
+  const shafts = useMemo(() => {
+    const N = 6;
+    // Slant angle from the sun direction (projected), so beams rake the way the
+    // light falls rather than dropping straight down.
+    const tilt = Math.atan2(sun[0], sun[1]) * 0.5;
+    return Array.from({ length: N }, (_, i) => ({
+      x: center[0] + (hash01(`gr${i}`, 3) - 0.5) * height * 0.7,
+      z: center[2] + (hash01(`gr${i}`, 7) - 0.5) * height * 0.5,
+      len: height * (1.2 + hash01(`gr${i}`, 5) * 0.6),
+      w: height * (0.16 + hash01(`gr${i}`, 9) * 0.14),
+      tilt: tilt + (hash01(`gr${i}`, 13) - 0.5) * 0.25,
+      speed: 0.4 + hash01(`gr${i}`, 11) * 0.6,
+      phase: hash01(`gr${i}`, 17) * Math.PI * 2,
+    }));
+  }, [center, height, sun]);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    const day = 1 - (nightRef.current ?? 0);
+    // Billboard the whole rig around Y so the flat beams always face the camera.
+    if (groupRef.current) {
+      const cam = state.camera.position;
+      groupRef.current.rotation.y = Math.atan2(cam.x - center[0], cam.z - center[2]);
+    }
+    for (let i = 0; i < matRefs.current.length; i++) {
+      const m = matRefs.current[i];
+      if (!m) continue;
+      const s = shafts[i];
+      m.opacity = Math.max(0, day) * (0.12 + 0.06 * Math.sin(t * s.speed + s.phase));
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={[center[0], 0, center[2]]}>
+      {shafts.map((s, i) => (
+        <mesh
+          key={i}
+          position={[s.x - center[0], height * 0.55, s.z - center[2]]}
+          rotation={[0, 0, s.tilt]}
+        >
+          <planeGeometry args={[s.w, s.len]} />
+          <meshBasicMaterial
+            ref={(el) => {
+              matRefs.current[i] = el;
+            }}
+            map={tex}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -1626,6 +1842,9 @@ function SceneClock({
   hemiRef,
   dirRef,
   skyRef,
+  fogNear,
+  fogFar,
+  worldH,
 }: {
   enabled: boolean;
   nightRef: React.MutableRefObject<number>;
@@ -1633,6 +1852,10 @@ function SceneClock({
   hemiRef: React.RefObject<THREE.HemisphereLight>;
   dirRef: React.RefObject<THREE.DirectionalLight>;
   skyRef: React.RefObject<React.ElementRef<typeof Sky>>;
+  /** Fog distances, scaled to the hero tree so the monument stays crisp. */
+  fogNear: number;
+  fogFar: number;
+  worldH: number;
 }) {
   const { scene } = useThree();
   const lerp = THREE.MathUtils.lerp;
@@ -1660,9 +1883,11 @@ function SceneClock({
 
     if (scene.background instanceof THREE.Color) scene.background.copy(c0.bg).lerp(c1.bg, t);
     if (scene.fog instanceof THREE.Fog) {
+      // Only the fog COLOUR animates with the day; the distances stay pinned to
+      // the tree's scale so the monument never fogs out at any time of day.
       scene.fog.color.copy(c0.fog).lerp(c1.fog, t);
-      scene.fog.near = lerp(k0.fog.near, k1.fog.near, t);
-      scene.fog.far = lerp(k0.fog.far, k1.fog.far, t);
+      scene.fog.near = fogNear;
+      scene.fog.far = fogFar;
     }
     if (ambientRef.current) ambientRef.current.intensity = lerp(k0.ambient, k1.ambient, t);
     if (hemiRef.current) {
@@ -1691,13 +1916,13 @@ function SceneClock({
     // Underground: as the camera dips below the surface, bury the world in warm
     // dark earth — the horizon and sky fade to soil so it feels like being *in*
     // the ground, not floating under a glass floor.
-    const buried = THREE.MathUtils.clamp(-state.camera.position.y / 3, 0, 1);
+    const buried = THREE.MathUtils.clamp(-state.camera.position.y / (worldH * 0.12), 0, 1);
     if (buried > 0.001) {
       if (scene.background instanceof THREE.Color) scene.background.lerp(EARTH_BG, buried);
       if (scene.fog instanceof THREE.Fog) {
         scene.fog.color.lerp(EARTH_FOG, buried);
-        scene.fog.near = lerp(scene.fog.near, 0.5, buried);
-        scene.fog.far = lerp(scene.fog.far, 18, buried);
+        scene.fog.near = lerp(scene.fog.near, worldH * 0.05, buried);
+        scene.fog.far = lerp(scene.fog.far, worldH * 0.9, buried);
       }
       if (ambientRef.current) {
         ambientRef.current.intensity = lerp(ambientRef.current.intensity, 0.4, buried * 0.85);

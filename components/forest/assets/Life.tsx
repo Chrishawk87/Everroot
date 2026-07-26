@@ -243,7 +243,9 @@ export function Lanterns({
 // Birds — cloned GLBs that wheel across the sky on looping elliptical paths,
 // banking into the turn and bobbing their wings via a subtle scale pulse.
 // ---------------------------------------------------------------------------
-function OneBird({ seed }: { seed: number }) {
+const smooth = (u: number) => u * u * (3 - 2 * u);
+
+function OneBird({ seed, perch }: { seed: number; perch?: [number, number, number] }) {
   const { scene } = useGLTF(MODELS.bird.url);
   const ref = useRef<THREE.Group>(null);
 
@@ -258,25 +260,57 @@ function OneBird({ seed }: { seed: number }) {
       speed: 0.12 + hash01(k, 19) * 0.1,
       phase: hash01(k, 23) * Math.PI * 2,
       scale: 0.5 + hash01(k, 29) * 0.5,
+      // Each bird runs its own long cycle; for part of it it peels off the sky
+      // path and settles on an assigned branch tip, then lifts off again.
+      period: 24 + hash01(k, 37) * 20,
+      landFrac: 0.22 + hash01(k, 41) * 0.12,
+      landOffset: hash01(k, 43),
     };
   }, [seed]);
 
   useFrame((state) => {
     const g = ref.current;
     if (!g) return;
-    const t = state.clock.elapsedTime * params.speed + params.phase;
-    const x = params.cx + Math.cos(t) * params.rx;
-    const z = params.cz + Math.sin(t) * params.rz;
-    const y = params.y + Math.sin(t * 2) * 1.2;
-    g.position.set(x, y, z);
-    // face direction of travel
+    const et = state.clock.elapsedTime;
+    const t = et * params.speed + params.phase;
+    // Free-flight position on the wheeling ellipse.
+    const fx = params.cx + Math.cos(t) * params.rx;
+    const fz = params.cz + Math.sin(t) * params.rz;
+    const fy = params.y + Math.sin(t * 2) * 1.2;
     const dx = -Math.sin(t) * params.rx;
     const dz = Math.cos(t) * params.rz;
-    g.rotation.y = Math.atan2(dx, dz);
-    // bank into the turn + wing flap via scale pulse on Y
-    g.rotation.z = Math.sin(t) * 0.3;
-    const flap = 1 + Math.sin(state.clock.elapsedTime * 9 + params.phase) * 0.25;
-    g.scale.set(params.scale, params.scale * flap, params.scale);
+
+    // When a perch is assigned, blend down to it during a window of the cycle.
+    let ease = 0;
+    if (perch) {
+      const cyc = ((et / params.period) + params.landOffset) % 1;
+      const pStart = 0.5;
+      const pEnd = pStart + params.landFrac;
+      if (cyc > pStart && cyc < pEnd) {
+        const local = (cyc - pStart) / (pEnd - pStart); // 0..1 across the visit
+        // ease in for the first fifth, hold, ease out for the last fifth
+        ease = local < 0.2 ? smooth(local / 0.2) : local > 0.8 ? smooth((1 - local) / 0.2) : 1;
+      }
+    }
+
+    if (ease > 0 && perch) {
+      g.position.set(
+        THREE.MathUtils.lerp(fx, perch[0], ease),
+        THREE.MathUtils.lerp(fy, perch[1] + 0.12, ease),
+        THREE.MathUtils.lerp(fz, perch[2], ease),
+      );
+      g.rotation.y = Math.atan2(dx, dz);
+      g.rotation.z = Math.sin(t) * 0.3 * (1 - ease);
+      // wings settle as it lands, a tiny bob while perched
+      const flap = 1 + Math.sin(et * 9 + params.phase) * 0.25 * (1 - ease * 0.9);
+      g.scale.set(params.scale, params.scale * flap, params.scale);
+    } else {
+      g.position.set(fx, fy, fz);
+      g.rotation.y = Math.atan2(dx, dz);
+      g.rotation.z = Math.sin(t) * 0.3;
+      const flap = 1 + Math.sin(et * 9 + params.phase) * 0.25;
+      g.scale.set(params.scale, params.scale * flap, params.scale);
+    }
   });
 
   return (
@@ -286,11 +320,11 @@ function OneBird({ seed }: { seed: number }) {
   );
 }
 
-export function Birds({ count = 7 }: { count?: number }) {
+export function Birds({ count = 7, perches }: { count?: number; perches?: [number, number, number][] }) {
   return (
     <>
       {Array.from({ length: count }, (_, i) => (
-        <OneBird key={i} seed={i} />
+        <OneBird key={i} seed={i} perch={perches && perches.length ? perches[i % perches.length] : undefined} />
       ))}
     </>
   );
@@ -300,22 +334,34 @@ export function Birds({ count = 7 }: { count?: number }) {
 // Butterflies — cloned GLBs that flutter low over the flowers on erratic,
 // bobbing wander paths with a fast wing-flap pulse.
 // ---------------------------------------------------------------------------
-function OneButterfly({ seed }: { seed: number }) {
+function OneButterfly({ seed, anchor }: { seed: number; anchor?: [number, number, number] }) {
   const { scene } = useGLTF(MODELS.butterfly.url);
   const ref = useRef<THREE.Group>(null);
 
   const params = useMemo(() => {
     const k = `fly${seed}`;
+    // With a flower anchor, the butterfly stays tight around that bloom on a
+    // small radius; without one it wanders the garden as before.
+    const base = anchor
+      ? {
+          cx: anchor[0],
+          cz: anchor[2],
+          y: anchor[1] + 0.5 + hash01(k, 17) * 0.7,
+          r: 0.5 + hash01(k, 11) * 1.1,
+        }
+      : {
+          cx: (hash01(k, 3) - 0.5) * 30,
+          cz: (hash01(k, 7) - 0.5) * 30,
+          y: 0.8 + hash01(k, 17) * 1.8,
+          r: 1.5 + hash01(k, 11) * 4,
+        };
     return {
-      cx: (hash01(k, 3) - 0.5) * 30,
-      cz: (hash01(k, 7) - 0.5) * 30,
-      r: 1.5 + hash01(k, 11) * 4,
-      y: 0.8 + hash01(k, 17) * 1.8,
+      ...base,
       speed: 0.5 + hash01(k, 19) * 0.6,
       phase: hash01(k, 23) * Math.PI * 2,
       scale: 0.18 + hash01(k, 29) * 0.16,
     };
-  }, [seed]);
+  }, [seed, anchor]);
 
   useFrame((state) => {
     const g = ref.current;
@@ -340,11 +386,17 @@ function OneButterfly({ seed }: { seed: number }) {
   );
 }
 
-export function Butterflies({ count = 14 }: { count?: number }) {
+export function Butterflies({
+  count = 14,
+  anchors,
+}: {
+  count?: number;
+  anchors?: [number, number, number][];
+}) {
   return (
     <>
       {Array.from({ length: count }, (_, i) => (
-        <OneButterfly key={i} seed={i} />
+        <OneButterfly key={i} seed={i} anchor={anchors && anchors.length ? anchors[i % anchors.length] : undefined} />
       ))}
     </>
   );
