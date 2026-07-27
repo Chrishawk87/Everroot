@@ -299,14 +299,18 @@ function OneBird({ seed, perch }: { seed: number; perch?: [number, number, numbe
         THREE.MathUtils.lerp(fy, perch[1] + 0.12, ease),
         THREE.MathUtils.lerp(fz, perch[2], ease),
       );
-      g.rotation.y = Math.atan2(dx, dz);
+      // The bird GLB faces -Z by default, so aiming it straight at the heading
+      // (dx,dz) flew it tail-first. Add PI so it faces its direction of travel.
+      g.rotation.y = Math.atan2(dx, dz) + Math.PI;
       g.rotation.z = Math.sin(t) * 0.3 * (1 - ease);
       // wings settle as it lands, a tiny bob while perched
       const flap = 1 + Math.sin(et * 9 + params.phase) * 0.25 * (1 - ease * 0.9);
       g.scale.set(params.scale, params.scale * flap, params.scale);
     } else {
       g.position.set(fx, fy, fz);
-      g.rotation.y = Math.atan2(dx, dz);
+      // The bird GLB faces -Z by default, so aiming it straight at the heading
+      // (dx,dz) flew it tail-first. Add PI so it faces its direction of travel.
+      g.rotation.y = Math.atan2(dx, dz) + Math.PI;
       g.rotation.z = Math.sin(t) * 0.3;
       const flap = 1 + Math.sin(et * 9 + params.phase) * 0.25;
       g.scale.set(params.scale, params.scale * flap, params.scale);

@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Sky, Environment, Lightformer } from "@react-three/drei";
+import { OrbitControls, Html, Sky, Environment, Lightformer, useGLTF, Clone } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette, SMAA } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { ForestGraph, ForestNodeDTO } from "@/lib/forest/types";
@@ -14,15 +14,12 @@ import {
   Terrain,
   Water,
   Scatter,
-  Lanterns,
   Birds,
   Butterflies,
   type ScatterItem,
-  type LanternPlacement,
 } from "@/components/forest/assets";
 import { LegacyPlaza, StonePath, Stream, WoodenBridge, Moat, Fireflies } from "@/components/forest/assets/Composition";
 import { HeroTree } from "@/components/forest/HeroTree";
-import { HeroBase } from "@/components/forest/HeroBase";
 
 // The central tree is now the ONE authored/imported hero mesh
 // (public/assets/models/hero/hero_tree.glb), per the EverRoot Studios pipeline:
@@ -683,27 +680,31 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     return out;
   }, [H]);
 
-  // Memory lanterns: one hangs from the branch beside each memory, dangling just
-  // below the leaf it belongs to and lit from within. These ARE the memories
-  // made visible in the canopy — not path props on the ground. Each sways gently
-  // on its own phase and glows warm day and night, blooming brighter after dark.
-  const lanterns = useMemo<LanternPlacement[]>(() => {
-    return layout.positioned.map((p, i) => {
-      const key = `lantern${p.node.id}`;
-      // dangle the lantern a little below and just outboard of the anchor point,
-      // so it reads as hung from the bough rather than sitting on it.
-      const drop = 0.9 + hash01(key, 5) * 0.5;
-      return {
-        position: [
-          p.position[0] + (hash01(key, 17) - 0.5) * 0.4,
-          p.position[1] - drop,
-          p.position[2] + (hash01(key, 19) - 0.5) * 0.4,
-        ] as Vec3,
-        rotationY: hash01(key, 11) * Math.PI * 2,
-        scale: 0.4 + hash01(key, 7) * 0.18,
-        phase: hash01(key, 13) * Math.PI * 2,
-      };
-    });
+  // Category lanterns: ONE lantern hangs from each of the tree's main branches,
+  // and each lantern IS a category. Every memory in that category lives inside
+  // its lantern — clicking the lantern selects the category. They're placed at
+  // the branch tips (the BRANCH nodes in the layout), sized large so they read
+  // as the tree's chapter-markers, labeled with the category name, and colored
+  // in that category's language. This replaces the old per-memory lanterns and
+  // the floating memory glyphs/threads.
+  const categoryLanterns = useMemo(() => {
+    return layout.positioned
+      .filter((p) => p.node.kind === "BRANCH")
+      .map((p) => {
+        const key = `catlantern${p.node.id}`;
+        return {
+          node: p.node,
+          // dangle a touch below the branch tip so it reads as hung from the bough
+          position: [
+            p.position[0],
+            p.position[1] - 0.7,
+            p.position[2],
+          ] as Vec3,
+          title: p.node.title,
+          color: CATEGORY_COLORS[p.node.title] ?? "#ffd9a0",
+          phase: hash01(key, 13) * Math.PI * 2,
+        };
+      });
   }, [layout.positioned]);
 
   // Flower positions in the garden — butterflies keep close to these instead of
@@ -858,10 +859,22 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       <AssetBoundary label="lake">
         <Water />
       </AssetBoundary>
-      {/* Memory lanterns hang from the boughs — one per memory — lit from within
-          and blooming warmer after dark. */}
-      <AssetBoundary label="lanterns">
-        <Lanterns placements={lanterns} nightRef={nightRef} />
+      {/* Category lanterns — one per main branch. Each IS a category; every
+          memory in it lives inside the lantern. Click to open the category. */}
+      <AssetBoundary label="category lanterns">
+        {categoryLanterns.map((c) => (
+          <CategoryLantern
+            key={c.node.id}
+            node={c.node}
+            position={c.position}
+            title={c.title}
+            color={c.color}
+            phase={c.phase}
+            selected={c.node.id === selectedId}
+            nightRef={nightRef}
+            onSelect={onSelect}
+          />
+        ))}
       </AssetBoundary>
 
       {/* Living flocks: birds wheeling overhead, butterflies over the flowers. */}
@@ -917,16 +930,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {!USE_HERO_TREE && crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
       <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} nightRef={nightRef} />
 
-      {/* THE HERO BASE — the authored platform/island the tree sits in the
-          middle of. HeroBase self-normalizes the source disc: it recenters it on
-          the origin, drops its underside to y=0 so the WHOLE plate rests on the
-          ground (never half-buried), and sizes it by `radius`. The trunk rises
-          from its centre. `radius` is the one knob to retune the platform's
-          spread — set wide enough to read as a plate AROUND the tree's root
-          flare (otherwise the roots hang over it and hide it). Sized to islandR
-          so it reads as the LAND inside the moat ring. A hair of lift on Y keeps
-          its underside from z-fighting the ground plane. */}
-      {USE_HERO_TREE ? <HeroBase radius={islandR} position={[0, H * 0.01, 0]} /> : null}
+      {/* The authored HeroBase platform was removed: it read as a grey square
+          plate under the tree (and its lip looked like a second bridge the tree
+          sat on). The tree now rises straight out of the terrain inside the moat
+          ring, so nothing grey shows and there's no phantom bridge. */}
 
       {/* THE HERO TREE — the one authored/imported central tree. Planted at the
           origin, scaled to the master trunk height H so it drives the whole
@@ -995,12 +1002,13 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         />
       ) : null}
 
-      {/* Memory graph: glowing threads between memories and the people in them. */}
-      <MemoryThreads graph={graph} layout={layout} selectedId={selectedId} />
-
-      {/* Interactive memory nodes (glow within the canopy). */}
+      {/* The floating memory glyphs and the threads between them were removed:
+          against the hero mesh they hung in empty space around the canopy. Every
+          memory now lives inside its category lantern instead. The only glyphs
+          that remain are the underground family/heritage nodes (PERSON/ROOT),
+          which surface as the camera dips below the earth. */}
       {layout.positioned
-        .filter((p) => p.node.kind !== "TRUNK" && !HIDDEN.has(p.node.kind))
+        .filter((p) => p.node.kind === "PERSON" || p.node.kind === "ROOT")
         .map((p) => (
           <NodeGlyph
             key={p.node.id}
@@ -2219,6 +2227,130 @@ function StarNode({
 const _lblWorld = new THREE.Vector3();
 const _lblCamDir = new THREE.Vector3();
 const _lblToNode = new THREE.Vector3();
+
+// ---------------------------------------------------------------------------
+// CategoryLantern — one hangs from each main branch and IS a category. Every
+// memory in that category lives inside it; clicking selects the category. It's
+// a large, warmly-lit loaded lantern GLB that sways on its cord, carries its
+// category's color in its glow, and floats a readable name label beside it.
+// ---------------------------------------------------------------------------
+function CategoryLantern({
+  node,
+  position,
+  title,
+  color,
+  phase,
+  selected,
+  nightRef,
+  onSelect,
+}: {
+  node: ForestNodeDTO;
+  position: Vec3;
+  title: string;
+  color: string;
+  phase: number;
+  selected: boolean;
+  nightRef: React.MutableRefObject<number>;
+  onSelect: (node: ForestNodeDTO | null) => void;
+}) {
+  const { scene } = useGLTF(MODELS.lantern.url);
+  const groupRef = useRef<THREE.Group>(null);
+  const swingRef = useRef<THREE.Group>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
+  const coreRef = useRef<THREE.MeshStandardMaterial>(null);
+  const [hovered, setHovered] = useState(false);
+  const appear = useRef(0);
+
+  useFrame((state, delta) => {
+    const t = state.clock.elapsedTime;
+    const night = nightRef?.current ?? 0;
+    if (swingRef.current) {
+      swingRef.current.rotation.z = Math.sin(t * 0.7 + phase) * 0.05;
+      swingRef.current.rotation.x = Math.cos(t * 0.5 + phase) * 0.035;
+    }
+    const flicker = 0.92 + Math.sin(t * 5 + phase) * 0.08;
+    const emphasis = selected ? 1.25 : hovered ? 1.12 : 1;
+    if (groupRef.current) {
+      appear.current = THREE.MathUtils.damp(appear.current, emphasis, 6, delta);
+      groupRef.current.scale.setScalar(appear.current);
+    }
+    if (lightRef.current) {
+      lightRef.current.intensity = (1.4 + night * 2.6 + (selected ? 1.5 : 0)) * flicker;
+    }
+    if (coreRef.current) {
+      coreRef.current.emissiveIntensity = (2.0 + night * 2.4 + (selected ? 1.2 : 0)) * flicker;
+    }
+  });
+
+  const select = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    onSelect(node);
+  };
+
+  return (
+    <group
+      ref={groupRef}
+      position={position}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHovered(true);
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        setHovered(false);
+        document.body.style.cursor = "default";
+      }}
+      onClick={select}
+    >
+      {/* the cord's top pivot sits at the branch; the lantern hangs and sways
+          below it as one pendulum */}
+      <group ref={swingRef}>
+        <mesh position={[0, 0.7, 0]}>
+          <cylinderGeometry args={[0.02, 0.02, 1.4, 6]} />
+          <meshStandardMaterial color="#2a1f12" roughness={1} />
+        </mesh>
+        {/* lantern body — sized large so it reads as the tree's chapter marker */}
+        <group position={[0, -0.2, 0]} scale={1.15}>
+          <Clone object={scene} castShadow receiveShadow />
+          {/* warm core, tinted to the category's color */}
+          <mesh position={[0, 0.15, 0]}>
+            <sphereGeometry args={[0.16, 14, 14]} />
+            <meshStandardMaterial
+              ref={coreRef}
+              color="#ffe6b4"
+              emissive={color}
+              emissiveIntensity={2.0}
+              toneMapped={false}
+            />
+          </mesh>
+          <pointLight
+            ref={lightRef}
+            color={color}
+            intensity={1.4}
+            distance={9}
+            decay={2}
+            position={[0, 0.15, 0]}
+          />
+        </group>
+      </group>
+      {/* the category name floats beside the lantern as its label / entry point */}
+      <Html center distanceFactor={14} position={[0, 1.15, 0]} zIndexRange={[20, 0]}>
+        <div
+          onClick={select}
+          className="cursor-pointer select-none whitespace-nowrap rounded-full border px-3 py-1 font-serif text-xs [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]"
+          style={{
+            color: "#f5ecd8",
+            borderColor: color,
+            background: selected || hovered ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.6)",
+            boxShadow: selected || hovered ? `0 0 14px ${color}` : "none",
+          }}
+        >
+          {title}
+        </div>
+      </Html>
+    </group>
+  );
+}
 
 function NodeGlyph({
   positioned,
