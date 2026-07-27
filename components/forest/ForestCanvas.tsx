@@ -945,6 +945,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             nightRef={nightRef}
             onSelect={onSelect}
             heroRef={heroRef}
+            reach={layout.trunkHeight}
           />
         ))}
       </AssetBoundary>
@@ -969,6 +970,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             nightRef={nightRef}
             onSelect={onSelect}
             heroRef={heroRef}
+            reach={layout.trunkHeight}
             linkedUserId={c.linkedUserId}
             onOpenFamily={onOpenFamily}
           />
@@ -2329,11 +2331,49 @@ const _lblToNode = new THREE.Vector3();
 const _catOut = new THREE.Vector3();
 const _catToCam = new THREE.Vector3();
 // Reused for anchoring each lantern's cord onto the REAL hero-tree geometry:
-// we cast a ray straight UP from a point below the lantern's column and take
-// the first hit on the actual mesh as the branch/foliage the cord hangs from.
-const _rayUp = new THREE.Vector3(0, 1, 0);
+// we fire a small CONE of rays upward from the lantern's attach point and take
+// the CLOSEST hit on the actual mesh as the branch/foliage the cord hangs from.
+// A single straight-up ray missed whenever the canopy had a gap right overhead;
+// the cone reliably finds the nearest real branch above/around the lantern.
 const _rayFrom = new THREE.Vector3();
 const _lanternRaycaster = new THREE.Raycaster();
+const ANCHOR_DIRS: THREE.Vector3[] = [
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0.35, 1, 0).normalize(),
+  new THREE.Vector3(-0.35, 1, 0).normalize(),
+  new THREE.Vector3(0, 1, 0.35).normalize(),
+  new THREE.Vector3(0, 1, -0.35).normalize(),
+  new THREE.Vector3(0.28, 1, 0.28).normalize(),
+  new THREE.Vector3(-0.28, 1, -0.28).normalize(),
+  new THREE.Vector3(0.28, 1, -0.28).normalize(),
+  new THREE.Vector3(-0.28, 1, 0.28).normalize(),
+];
+
+// The lantern GLB is opaque, so the candle inside is invisible from the front.
+// Turn its shells translucent (once per shared source scene) so the warm flame
+// glows through the glass. Mutating the cached source is fine — this GLB is
+// only ever used for these lanterns.
+const _lanternProcessed = new WeakSet<THREE.Object3D>();
+function makeLanternTranslucent(root: THREE.Object3D) {
+  if (_lanternProcessed.has(root)) return;
+  _lanternProcessed.add(root);
+  root.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const m of mats) {
+      const mat = m as THREE.MeshStandardMaterial;
+      mat.transparent = true;
+      mat.opacity = 0.5;
+      mat.depthWrite = false;
+      mat.side = THREE.DoubleSide;
+      if (mat.emissive) {
+        mat.emissive = new THREE.Color("#3a2410");
+        mat.emissiveIntensity = 0.45;
+      }
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // CategoryLantern — one hangs from each main branch and IS a category. Every
@@ -2354,6 +2394,7 @@ function CategoryLantern({
   nightRef,
   onSelect,
   heroRef,
+  reach,
   linkedUserId,
   onOpenFamily,
 }: {
@@ -2370,12 +2411,16 @@ function CategoryLantern({
   onSelect: (node: ForestNodeDTO | null) => void;
   /** The real hero-tree object, so the cord can be anchored onto actual geometry. */
   heroRef?: React.MutableRefObject<THREE.Object3D | null>;
+  /** How far up to search for a branch to hang from (≈ the tree height). */
+  reach?: number;
   /** Family variant: the linked account this person owns (null if not linked). */
   linkedUserId?: string | null;
   /** Family variant: navigate into a linked person's own forest. */
   onOpenFamily?: (userId: string) => void;
 }) {
   const { scene } = useGLTF(MODELS.lantern.url);
+  // Make the shared lantern GLB translucent so the candle glows through.
+  useMemo(() => makeLanternTranslucent(scene), [scene]);
   const swingRef = useRef<THREE.Group>(null);
   const bodyRef = useRef<THREE.Group>(null);
   const lightRef = useRef<THREE.PointLight>(null);
@@ -2392,23 +2437,26 @@ function CategoryLantern({
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
     const night = nightRef?.current ?? 0;
-    // Anchor the cord's TOP onto the real hero-tree geometry: cast a ray
-    // straight UP the lantern's column and drop the group onto the first branch/
-    // foliage surface it hits, so the cord visibly emerges from the tree instead
-    // of floating in empty air. Resolved once per lantern.
+    // Anchor the cord's TOP onto the real hero-tree geometry: fire a small CONE
+    // of rays upward from the lantern's attach point and snap the whole group
+    // onto the CLOSEST branch/foliage point found. The cord then physically
+    // emerges from that real surface and the lantern hangs its short `drop`
+    // below it. Casting a generous distance (≈ tree height) is what makes it
+    // actually reach the canopy — the old single short ray fell short and left
+    // the cords floating. Resolved once per lantern.
     if (!anchored.current && heroRef?.current && groupRef.current) {
-      // Start below the lantern's intended attach point and cast upward; the
-      // first hit is the underside of the branch/foliage right above it.
-      const startY = Math.max(1, position[1] - drop);
-      _rayFrom.set(position[0], startY, position[2]);
-      _lanternRaycaster.set(_rayFrom, _rayUp);
-      _lanternRaycaster.far = (position[1] - startY) + drop + 2;
-      const hits = _lanternRaycaster.intersectObject(heroRef.current, true);
-      if (hits.length > 0) {
-        // Snap the cord top onto the real branch — but never LOWER than the
-        // planned canopy height, so a stray low hit can't drop a lantern toward
-        // the water. The body then hangs its short `drop` below this.
-        groupRef.current.position.y = Math.max(hits[0].point.y, position[1]);
+      _rayFrom.set(position[0], position[1], position[2]);
+      const far = reach ?? 40;
+      let best: THREE.Intersection | null = null;
+      for (const dir of ANCHOR_DIRS) {
+        _lanternRaycaster.set(_rayFrom, dir);
+        _lanternRaycaster.far = far;
+        const hits = _lanternRaycaster.intersectObject(heroRef.current, true);
+        if (hits.length > 0 && (!best || hits[0].distance < best.distance)) best = hits[0];
+      }
+      if (best) {
+        // Move the cord's TOP exactly onto the real branch point we found.
+        groupRef.current.position.set(best.point.x, best.point.y, best.point.z);
         anchored.current = true;
       }
     }
@@ -2488,7 +2536,7 @@ function CategoryLantern({
               the category's color is carried by the surrounding glow light
               below, not by this core. */}
           <mesh position={[0, -0.05, 0]}>
-            <sphereGeometry args={[0.07, 12, 12]} />
+            <sphereGeometry args={[0.11, 14, 14]} />
             <meshStandardMaterial
               ref={coreRef}
               color="#fff2d0"
