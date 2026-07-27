@@ -704,14 +704,9 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       const R = crownR * (0.9 + hash01(key, 7) * 0.1); // tip near the canopy edge
       const tipY = crownY - crownR * 0.5 + (hash01(key, 5) - 0.5) * crownR * 0.18;
       const tip: Vec3 = [Math.cos(a) * R, tipY, Math.sin(a) * R];
-      // the bough springs from a point nearer the trunk and a touch higher, so it
-      // reads as a real limb reaching out and down to hold the lantern
-      const inR = crownR * 0.2;
-      const from: Vec3 = [Math.cos(a) * inR, tipY + crownR * 0.3, Math.sin(a) * inR];
       return {
         node: p.node,
         position: tip,
-        branchFrom: from,
         title: p.node.title,
         color: CATEGORY_COLORS[p.node.title] ?? "#ffd9a0",
         phase: hash01(key, 13) * Math.PI * 2,
@@ -879,7 +874,6 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             key={c.node.id}
             node={c.node}
             position={c.position}
-            branchFrom={c.branchFrom}
             title={c.title}
             color={c.color}
             phase={c.phase}
@@ -2252,7 +2246,6 @@ const _catToCam = new THREE.Vector3();
 function CategoryLantern({
   node,
   position,
-  branchFrom,
   title,
   color,
   phase,
@@ -2262,7 +2255,6 @@ function CategoryLantern({
 }: {
   node: ForestNodeDTO;
   position: Vec3;
-  branchFrom: Vec3;
   title: string;
   color: string;
   phase: number;
@@ -2279,24 +2271,6 @@ function CategoryLantern({
   const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const appear = useRef(0);
-
-  // The bough that springs from the trunk out to this lantern's tip. Computed in
-  // the group's local space (the group sits at the tip), so it points back
-  // toward `branchFrom`. A tapered cylinder = a real reaching limb.
-  const bough = useMemo(() => {
-    const f = new THREE.Vector3(
-      branchFrom[0] - position[0],
-      branchFrom[1] - position[1],
-      branchFrom[2] - position[2],
-    );
-    const len = f.length();
-    const mid = f.clone().multiplyScalar(0.5);
-    const quat = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      f.clone().normalize(),
-    );
-    return { len, mid, quat, rBase: Math.max(0.06, len * 0.05), rTip: Math.max(0.025, len * 0.02) };
-  }, [branchFrom, position]);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
@@ -2349,16 +2323,12 @@ function CategoryLantern({
       }}
       onClick={select}
     >
-      {/* the bough reaching from the trunk out to this tip */}
-      <mesh position={bough.mid.toArray()} quaternion={bough.quat} castShadow>
-        <cylinderGeometry args={[bough.rTip, bough.rBase, bough.len, 7]} />
-        <meshStandardMaterial color="#4e341f" roughness={0.95} metalness={0} />
-      </mesh>
-
-      {/* the cord + lantern hang and sway from the tip as one pendulum */}
+      {/* the cord + lantern hang and sway from the branch as one pendulum. The
+          cord's top sits up in the canopy so the lantern reads as hung straight
+          off the tree's own branches — no added limb. */}
       <group ref={swingRef}>
-        <mesh position={[0, -0.6, 0]}>
-          <cylinderGeometry args={[0.02, 0.02, 1.2, 6]} />
+        <mesh position={[0, 0.75, 0]}>
+          <cylinderGeometry args={[0.02, 0.02, 1.5, 6]} />
           <meshStandardMaterial color="#2a1f12" roughness={1} />
         </mesh>
         {/* lantern body — sized large so it reads as the tree's chapter marker */}
