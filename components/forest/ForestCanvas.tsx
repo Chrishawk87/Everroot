@@ -713,9 +713,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       const R = attachR * (0.94 + hash01(key, 7) * 0.12);
       const y = attachY + (hash01(key, 5) - 0.5) * H * 0.1;
       const tip: Vec3 = [Math.cos(a) * R, y, Math.sin(a) * R];
-      // Staggered cord lengths — every lantern hangs at a DIFFERENT height so
-      // they read as strung individually through the canopy, not a level ring.
-      const drop = H * (0.16 + hash01(key, 17) * 0.2);
+      // Short, staggered cords — every lantern hangs just below its branch at a
+      // slightly DIFFERENT length, so they read as strung individually through
+      // the canopy (never long enough to dip toward the water).
+      const drop = H * (0.05 + hash01(key, 17) * 0.06);
       return {
         node: p.node,
         position: tip,
@@ -753,7 +754,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       const R = attachR * (0.9 + hash01(key, 7) * 0.16);
       const y = attachY + (hash01(key, 5) - 0.5) * H * 0.1;
       const tip: Vec3 = [Math.cos(a) * R, y, Math.sin(a) * R];
-      const drop = H * (0.14 + hash01(key, 17) * 0.18); // staggered heights too
+      const drop = H * (0.05 + hash01(key, 17) * 0.06); // short, staggered too
       return {
         node: p.node,
         position: tip,
@@ -2404,7 +2405,10 @@ function CategoryLantern({
       _lanternRaycaster.far = (position[1] - startY) + drop + 2;
       const hits = _lanternRaycaster.intersectObject(heroRef.current, true);
       if (hits.length > 0) {
-        groupRef.current.position.y = hits[0].point.y;
+        // Snap the cord top onto the real branch — but never LOWER than the
+        // planned canopy height, so a stray low hit can't drop a lantern toward
+        // the water. The body then hangs its short `drop` below this.
+        groupRef.current.position.y = Math.max(hits[0].point.y, position[1]);
         anchored.current = true;
       }
     }
@@ -2422,7 +2426,8 @@ function CategoryLantern({
       lightRef.current.intensity = (1.4 + night * 2.6 + (selected ? 1.5 : 0)) * flicker;
     }
     if (coreRef.current) {
-      coreRef.current.emissiveIntensity = (2.0 + night * 2.4 + (selected ? 1.2 : 0)) * flicker;
+      // A candle flame — gentle, warm, flickering; brighter after dark.
+      coreRef.current.emissiveIntensity = (1.1 + night * 1.6 + (selected ? 0.7 : 0)) * flicker;
     }
     // Fade the label out on the far side of the tree so only the lanterns facing
     // the camera show their name — the front always reads cleanly.
@@ -2478,15 +2483,17 @@ function CategoryLantern({
         {/* lantern body at the cord's end — scaled (via useFrame) to the tree */}
         <group ref={bodyRef} position={[0, -drop, 0]}>
           <Clone object={scene} castShadow receiveShadow />
-          {/* warm core, tinted to the category's color (local units — scales
-              with the body) */}
-          <mesh position={[0, 0.15, 0]}>
-            <sphereGeometry args={[0.16, 14, 14]} />
+          {/* the CANDLE FLAME — a small warm point of light sitting INSIDE the
+              lantern body (not perched on top). It flickers like a real flame;
+              the category's color is carried by the surrounding glow light
+              below, not by this core. */}
+          <mesh position={[0, -0.05, 0]}>
+            <sphereGeometry args={[0.07, 12, 12]} />
             <meshStandardMaterial
               ref={coreRef}
-              color="#ffe6b4"
-              emissive={color}
-              emissiveIntensity={2.0}
+              color="#fff2d0"
+              emissive="#ffb046"
+              emissiveIntensity={1.4}
               toneMapped={false}
             />
           </mesh>

@@ -483,3 +483,134 @@ export async function getCapsules(ownerId: string, viewerId: string): Promise<Ca
 
   return { ownerId, ownerName: profile.displayName, capsules: capsuleViews, canView: true };
 }
+
+// One piece of content hanging off a category branch — a memory with whatever
+// was captured for it: a voice/video recording, a photo, and/or written text.
+export interface CategoryItem {
+  nodeId: string;
+  kind: NodeKind;
+  title: string;
+  summary: string | null;
+  transcript: string | null;
+  question: string | null;
+  epoch: string | null;
+  createdAt: string;
+  recordingId: string | null;
+  mimeType: string | null;
+  durationMs: number;
+  isVideo: boolean;
+  photoUrl: string | null;
+}
+
+// Everything associated with one category branch (e.g. "Messages for the
+// Future") — the full drawer of memories behind that lantern.
+export interface CategoryContents {
+  branchId: string;
+  title: string;
+  summary: string | null;
+  ownerId: string;
+  items: CategoryItem[];
+  canView: boolean;
+}
+
+// Branch kinds whose lanterns open a category drawer.
+const BRANCH_KINDS = new Set<NodeKind>(["BRANCH", "SUB_BRANCH"]);
+
+// Pull the first URL-looking string off a node's freeform data blob — that's
+// where a PHOTO node keeps the image it points at.
+function photoUrlFromData(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const d = data as Record<string, unknown>;
+  for (const key of ["url", "photoUrl", "imageUrl", "src", "image"]) {
+    const v = d[key];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return null;
+}
+
+/**
+ * Gather everything that hangs off a category branch: walk the CONTAINS edges
+ * from the branch down through any sub-branches to every memory node beneath
+ * it, then attach each memory's most recent recording (voice or video) and any
+ * photo. Access mirrors the other legacy products — owner + linked family. When
+ * the viewer isn't allowed, `canView` is false and no content is exposed.
+ */
+export async function getCategoryContents(
+  branchId: string,
+  viewerId: string,
+): Promise<CategoryContents | null> {
+  const branch = await prisma.forestNode.findUnique({ where: { id: branchId } });
+  if (!branch || !BRANCH_KINDS.has(branch.kind)) return null;
+
+  const ownerId = branch.userId;
+  const base: CategoryContents = {
+    branchId: branch.id,
+    title: branch.title,
+    summary: branch.summary,
+    ownerId,
+    items: [],
+    canView: false,
+  };
+
+  const allowed = await isLinkedFamily(viewerId, ownerId);
+  if (!allowed) return base;
+
+  const [nodes, edges, recs] = await Promise.all([
+    prisma.forestNode.findMany({ where: { userId: ownerId } }),
+    prisma.forestEdge.findMany({ where: { userId: ownerId, kind: "CONTAINS" } }),
+    listRecordingsForUser(ownerId),
+  ]);
+
+  // CONTAINS edges point parent → child. BFS down from the branch to collect
+  // every descendant node id (through nested sub-branches too).
+  const childrenOf = new Map<string, string[]>();
+  for (const e of edges) {
+    const list = childrenOf.get(e.fromNodeId);
+    if (list) list.push(e.toNodeId);
+    else childrenOf.set(e.fromNodeId, [e.toNodeId]);
+  }
+
+  const descendantIds = new Set<string>();
+  const queue = [...(childrenOf.get(branchId) ?? [])];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (descendantIds.has(id)) continue;
+    descendantIds.add(id);
+    const kids = childrenOf.get(id);
+    if (kids) queue.push(...kids);
+  }
+
+  // Most recent recording per node.
+  const recByNode = new Map<string, RecordingMeta>();
+  for (const r of recs) if (!recByNode.has(r.nodeId)) recByNode.set(r.nodeId, r);
+
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  const items: CategoryItem[] = [];
+  for (const id of descendantIds) {
+    const n = nodeById.get(id);
+    if (!n || !CLIP_KINDS.has(n.kind)) continue;
+    const rec = recByNode.get(n.id);
+    const mimeType = rec?.mimeType ?? null;
+    items.push({
+      nodeId: n.id,
+      kind: n.kind,
+      title: n.title,
+      summary: n.summary,
+      transcript: rec?.transcript ?? null,
+      question: rec?.question ?? null,
+      epoch: n.epoch,
+      createdAt: n.createdAt.toISOString(),
+      recordingId: rec?.id ?? null,
+      mimeType,
+      durationMs: rec?.durationMs ?? 0,
+      isVideo: mimeType?.startsWith("video") ?? false,
+      photoUrl: photoUrlFromData(n.data),
+    });
+  }
+
+  // Oldest → newest, so a category reads like a little timeline.
+  items.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  return { ...base, items, canView: true };
+}

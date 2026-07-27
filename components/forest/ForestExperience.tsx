@@ -12,6 +12,7 @@ import InviteButton from "./InviteButton";
 import ShareClipButton, { isClipKind } from "./ShareClipButton";
 import StoryFeedPlayer from "./StoryFeedPlayer";
 import CapsulePanel from "./CapsulePanel";
+import CategoryPanel from "./CategoryPanel";
 import GuardianPanel, { type FamilyOption } from "./GuardianPanel";
 import { signOutAction } from "@/app/actions/forest";
 
@@ -296,8 +297,17 @@ export default function ForestExperience({
         </div>
       ) : null}
 
+      {/* Category lantern → full drawer of everything hanging off that branch. */}
+      {selected && (selected.kind === "BRANCH" || selected.kind === "SUB_BRANCH") ? (
+        <CategoryPanel
+          branchId={selected.id}
+          branchTitle={selected.title}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
+
       {/* Selected node detail. */}
-      {selected ? (
+      {selected && selected.kind !== "BRANCH" && selected.kind !== "SUB_BRANCH" ? (
         <div className="absolute bottom-5 left-64 z-20 max-w-sm rounded-2xl border border-parchment/15 bg-black/70 p-5 backdrop-blur">
           <p className="text-xs uppercase tracking-widest text-canopy-light">
             {selected.kind.replace(/_/g, " ")}
