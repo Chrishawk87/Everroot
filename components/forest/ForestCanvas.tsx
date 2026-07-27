@@ -759,7 +759,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       dpr={[1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.6 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.82 }}
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={[atmo.background]} />
@@ -818,10 +818,15 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {/* Image-based lighting: soft sky fill + a warm key + a ground bounce,
           built entirely in-scene (no external HDRI files). Gives leaves, fruit
           and bark realistic soft highlights and gentle reflections. */}
-      <Environment resolution={256} frames={1}>
-        <Lightformer intensity={0.55} color="#dfeaff" position={[0, 8, 0]} scale={[12, 12, 1]} form="ring" />
-        <Lightformer intensity={0.9} color="#fff0d6" position={[-6, 5, -5]} scale={[6, 6, 1]} />
-        <Lightformer intensity={0.35} color="#3d5230" position={[0, -6, 0]} scale={[14, 14, 1]} rotation={[Math.PI / 2, 0, 0]} />
+      <Environment resolution={512} frames={1}>
+        {/* Cool sky dome fill — soft ambient bounce from above. */}
+        <Lightformer intensity={0.6} color="#dbe8ff" position={[0, 10, 0]} scale={[16, 16, 1]} form="ring" />
+        {/* Warm golden-hour key, low and to the side, the way a late sun rakes in. */}
+        <Lightformer intensity={1.35} color="#ffe1ad" position={[-7, 4.5, -6]} scale={[8, 8, 1]} />
+        {/* Low golden rim from behind for reflective separation on wet stone + water. */}
+        <Lightformer intensity={0.8} color="#ffb765" position={[6, 2.2, -8]} scale={[7, 4, 1]} />
+        {/* Earthy ground bounce so undersides pick up warm reflected light. */}
+        <Lightformer intensity={0.4} color="#4a5a34" position={[0, -6, 0]} scale={[18, 18, 1]} rotation={[Math.PI / 2, 0, 0]} />
       </Environment>
 
       {/* Image-based lighting from a real HDRI — the biggest lever on a
@@ -1021,6 +1026,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         target={[0, H * 0.5, 0]}
       />
       <CameraRig focusPos={focusPos} />
+      {/* A subtle handheld "breath" on the idle camera: a very slow FOV swell
+          layered over the auto-orbit so the framing feels alive, never static.
+          Suspended while focusing a memory so the push-in stays crisp. */}
+      <IdleBreath idle={!focusPos} />
 
       {/* Cinematic pass: bloom lifts the glowing memories, stars and low sun;
           SMAA cleans edges; a soft vignette focuses the eye on the tree. */}
@@ -1031,6 +1040,29 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       </EffectComposer>
     </Canvas>
   );
+}
+
+// Cinematic idle breathing. Layers a slow, low-amplitude FOV swell (two
+// detuned sines so it never feels like a loop) onto whatever the camera is
+// doing. It only ever nudges the projection — it never touches camera position
+// or the OrbitControls target — so every manual orbit/zoom interaction is
+// preserved exactly, and the hero tree stays dominant in frame.
+function IdleBreath({ idle }: { idle: boolean }) {
+  const { camera } = useThree();
+  const baseFov = useRef<number | null>(null);
+  useFrame((state) => {
+    if (!(camera instanceof THREE.PerspectiveCamera)) return;
+    if (baseFov.current === null) baseFov.current = camera.fov;
+    const t = state.clock.elapsedTime;
+    // Ease the breath in only while idle; hold the true base FOV when focusing.
+    const breath = idle ? Math.sin(t * 0.5) * 0.6 + Math.sin(t * 0.83 + 1.7) * 0.3 : 0;
+    const target = baseFov.current + breath;
+    if (Math.abs(camera.fov - target) > 0.002) {
+      camera.fov += (target - camera.fov) * 0.06;
+      camera.updateProjectionMatrix();
+    }
+  });
+  return null;
 }
 
 function CameraRig({ focusPos }: { focusPos: Vec3 | null }) {

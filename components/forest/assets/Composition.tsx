@@ -187,16 +187,68 @@ export function Stream({
 }
 
 // ---------------------------------------------------------------------------
-// Moat — a walled water basin encircling the hero-tree island, so the tree reads
-// as a sacred island reached by the footbridge.
+// Moat — a naturally-formed, spring-fed pool encircling the hero-tree island.
 //
-// WHY A RAISED, WALLED BASIN (not a flat ring on the ground): the visible ground
-// is the opaque Terrain mesh at grade. A flat water ring laid at grade z-fights
-// it and gets hidden — the water only pokes through as broken slivers. So the
-// moat is built as a self-contained basin: a low stone kerb wall rises from the
-// ground and holds a raised sheet of water inside it, well ABOVE the terrain, so
-// the ring is always fully visible and reads as an intentional monument feature.
+// NOT a dug circle: the water plane has an IRREGULAR, organic shoreline (its
+// inner + outer edges wander in and out), a dark spring bed beneath it for real
+// depth, and — most importantly — its banks are hidden behind a continuous,
+// overlapping drift of LOADED natural props (mossy boulders, pebbles, ferns,
+// grasses, wildflowers) that rise from grade up over the waterline. There are no
+// primitive walls; the stone-and-plant banks dissolve the edge so the water
+// reads as a stream that has always been here, worn into the land.
 // ---------------------------------------------------------------------------
+
+// An irregular annulus of water: outer + inner contours each wander with layered
+// sine noise so no part of the shoreline is a clean arc.
+function makeMoatWaterGeometry(innerRadius: number, outerRadius: number): THREE.ShapeGeometry {
+  const N = 128;
+  const shape = new THREE.Shape();
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const wobble = 1 + Math.sin(a * 3) * 0.05 + Math.sin(a * 7 + 1.3) * 0.035 + Math.sin(a * 13 + 0.6) * 0.02;
+    const r = outerRadius * wobble;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  const hole = new THREE.Path();
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const wobble = 1 + Math.sin(a * 4 + 2) * 0.06 + Math.sin(a * 9 + 0.4) * 0.04 + Math.sin(a * 15) * 0.02;
+    const r = innerRadius * wobble;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) hole.moveTo(x, y);
+    else hole.lineTo(x, y);
+  }
+  shape.holes.push(hole);
+  const geo = new THREE.ShapeGeometry(shape, 24);
+  geo.rotateX(-Math.PI / 2); // lay flat in the XZ plane
+  return geo;
+}
+
+// A dark spring bed that reads as depth beneath the water; slightly larger and
+// irregular so its edge is never a clean circle either.
+function makeMoatBedGeometry(outerRadius: number): THREE.ShapeGeometry {
+  const N = 96;
+  const shape = new THREE.Shape();
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const wobble = 1 + Math.sin(a * 3) * 0.05 + Math.sin(a * 7 + 1.3) * 0.035;
+    const r = (outerRadius + 0.8) * wobble;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  const geo = new THREE.ShapeGeometry(shape, 16);
+  geo.rotateX(-Math.PI / 2);
+  return geo;
+}
+
+type BankProp = { x: number; z: number; y: number; s: number; rot: number; tilt: number; kind: number };
+
 export function Moat({
   innerRadius,
   outerRadius,
@@ -204,64 +256,140 @@ export function Moat({
 }: {
   innerRadius: number;
   outerRadius: number;
-  /** Height of the water surface above grade. Kept clear of the terrain so the
-   *  ring never z-fights the ground and always reads. */
+  /** Height of the water surface above grade. The stony banks rise from grade
+   *  up past this so the pool never reads as a floating disc. */
   waterLevel?: number;
 }) {
+  const rockA = useGLTF(MODELS.rock_a.url).scene;
+  const rockB = useGLTF(MODELS.rock_b.url).scene;
+  const fern = useGLTF(MODELS.fern.url).scene;
+  const grass = useGLTF(MODELS.grass_clump.url).scene;
+  const flowerA = useGLTF(MODELS.flower_a.url).scene;
+  const flowerB = useGLTF(MODELS.flower_b.url).scene;
+
+  const waterGeo = useMemo(() => makeMoatWaterGeometry(innerRadius, outerRadius), [innerRadius, outerRadius]);
+  const bedGeo = useMemo(() => makeMoatBedGeometry(outerRadius), [outerRadius]);
+
   const normal = useMemo(makeStreamNormal, []);
-  // Drift the ripples slowly around the ring so the water is alive but calm.
   useFrame((_, delta) => {
-    normal.offset.x = (normal.offset.x - delta * 0.05) % 1;
-    normal.offset.y = (normal.offset.y + delta * 0.02) % 1;
+    normal.offset.x = (normal.offset.x - delta * 0.04) % 1;
+    normal.offset.y = (normal.offset.y + delta * 0.018) % 1;
   });
-  const wallH = waterLevel + 0.35; // kerb crowns just above the waterline
-  const wallT = 0.6; // wall thickness
+
+  // Bank props ring BOTH shorelines. Large mossy boulders and grasses cluster on
+  // the banks (rising from grade over the waterline to hide the edge); pebbles,
+  // ferns and wildflowers fill between them and spill into the shallows. Placed
+  // with heavy angular + radial jitter so nothing repeats or reads as a ring of
+  // evenly-spaced stones.
+  const banks = useMemo<BankProp[]>(() => {
+    const out: BankProp[] = [];
+    // deterministic pseudo-random so the layout is stable across renders
+    let seed = 1337;
+    const rnd = () => {
+      seed = (seed * 1664525 + 1013904223) % 4294967296;
+      return seed / 4294967296;
+    };
+    const banksAt = [
+      { radius: outerRadius, spread: 1.6, density: 3.2, out: true }, // outer bank
+      { radius: innerRadius, spread: 1.3, density: 3.0, out: false }, // island shore
+    ];
+    for (const bank of banksAt) {
+      const count = Math.max(20, Math.round(bank.radius * bank.density));
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2 + (rnd() - 0.5) * 0.35;
+        // push boulders slightly onto land, pebbles/plants toward the water
+        const roll = rnd();
+        const radialDir = bank.out ? 1 : -1;
+        const off = (roll < 0.45 ? 0.2 + rnd() * bank.spread : -(rnd() * bank.spread * 0.7)) * radialDir;
+        const r = bank.radius + off;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        let kind: number; // 0 boulder, 1 pebble, 2 fern, 3 grass, 4 flower
+        let s: number;
+        let y: number;
+        if (roll < 0.28) {
+          kind = 0; // mossy boulder on the bank, rising over the waterline
+          s = 0.9 + rnd() * 1.6;
+          y = -0.1 + rnd() * 0.2;
+        } else if (roll < 0.5) {
+          kind = 1; // pebble/cobble in the shallows
+          s = 0.25 + rnd() * 0.4;
+          y = waterLevel - 0.15 - rnd() * 0.2;
+        } else if (roll < 0.68) {
+          kind = 3; // grass clump
+          s = 0.7 + rnd() * 0.7;
+          y = 0.0;
+        } else if (roll < 0.84) {
+          kind = 2; // fern
+          s = 0.6 + rnd() * 0.6;
+          y = 0.0;
+        } else {
+          kind = 4; // wildflower
+          s = 0.6 + rnd() * 0.6;
+          y = 0.0;
+        }
+        out.push({ x, z, y, s, rot: rnd() * Math.PI * 2, tilt: (rnd() - 0.5) * 0.25, kind });
+      }
+    }
+    return out;
+  }, [innerRadius, outerRadius, waterLevel]);
+
+  const propFor = (kind: number) => {
+    switch (kind) {
+      case 0:
+        return rockA;
+      case 1:
+        return rockB;
+      case 2:
+        return fern;
+      case 3:
+        return grass;
+      case 4:
+        return Math.random() < 0.5 ? flowerA : flowerB;
+      default:
+        return rockA;
+    }
+  };
+
   return (
     <group>
-      {/* Dark basin bed, spanning the full pool, sat below the waterline to give
-          the water visible depth. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, waterLevel - 0.5, 0]} receiveShadow>
-        <circleGeometry args={[outerRadius, 128]} />
-        <meshStandardMaterial color="#1c1710" roughness={1} metalness={0} />
+      {/* Spring bed — dark, wet mineral floor giving the water real depth. */}
+      <mesh geometry={bedGeo} position={[0, waterLevel - 0.55, 0]} receiveShadow>
+        <meshStandardMaterial color="#15120b" roughness={1} metalness={0} />
       </mesh>
-      {/* The water ring itself — from the island edge out to the wall. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, waterLevel, 0]}>
-        <ringGeometry args={[innerRadius, outerRadius, 160]} />
+      {/* The spring water itself — an irregular sheet, glassy and reflective,
+          rippling in-shader (the accepted moving-water exception). */}
+      <mesh geometry={waterGeo} position={[0, waterLevel, 0]}>
         <meshStandardMaterial
-          color="#2f5a63"
+          color="#2b525a"
           normalMap={normal}
-          normalScale={new THREE.Vector2(0.6, 0.6)}
-          roughness={0.14}
-          metalness={0.25}
+          normalScale={new THREE.Vector2(0.45, 0.45)}
+          roughness={0.06}
+          metalness={0.4}
           transparent
-          opacity={0.9}
-          envMapIntensity={0.9}
+          opacity={0.86}
+          envMapIntensity={1.3}
           side={THREE.DoubleSide}
         />
       </mesh>
-      {/* Outer stone kerb wall — rises from grade and contains the pool so it
-          reads as a basin, not a floating disc of water. */}
-      <mesh position={[0, wallH / 2, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[outerRadius + wallT, outerRadius + wallT, wallH, 96, 1, true]} />
-        <meshStandardMaterial color={STONE} roughness={0.95} metalness={0} side={THREE.DoubleSide} />
-      </mesh>
-      {/* Flat kerb cap ring across the top of the outer wall. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, wallH, 0]} receiveShadow>
-        <ringGeometry args={[outerRadius, outerRadius + wallT, 96]} />
-        <meshStandardMaterial color={STONE_DARK} roughness={0.95} metalness={0} side={THREE.DoubleSide} />
-      </mesh>
-      {/* Inner retaining wall around the island edge, holding the water back from
-          the land so the shoreline reads crisp. */}
-      <mesh position={[0, wallH / 2, 0]} receiveShadow>
-        <cylinderGeometry args={[innerRadius, innerRadius, wallH, 96, 1, true]} />
-        <meshStandardMaterial color={STONE_DARK} roughness={0.98} metalness={0} side={THREE.DoubleSide} />
-      </mesh>
+      {/* Natural stone-and-plant banks that dissolve the shoreline. */}
+      {banks.map((b, i) => (
+        <group key={i} position={[b.x, b.y, b.z]} rotation={[b.tilt, b.rot, b.tilt * 0.6]} scale={b.s}>
+          <Clone object={propFor(b.kind)} castShadow receiveShadow />
+        </group>
+      ))}
     </group>
   );
 }
 
-// A small arched wooden footbridge: a slightly cambered deck of planks with two
-// hand-rails on posts. Placed where the path meets the stream.
+// An heirloom footbridge: a cambered deck of hand-hewn oak planks (grain
+// variation plank to plank), seated on natural-stone abutments at each bank,
+// with forged-iron railings on turned posts and a warm lantern at each corner
+// post. Built as a deliberate designed structure (an heirloom object, not
+// scanned terrain), so it composes from authored forms + loaded stone + a glow.
+const IRON = "#211d18";
+const IRON_HI = "#39322a";
+
 export function WoodenBridge({
   position = [0, 0, 0],
   rotationY = 0,
@@ -273,34 +401,92 @@ export function WoodenBridge({
   span?: number;
   width?: number;
 }) {
-  const planks = 9;
+  const rockA = useGLTF(MODELS.rock_a.url).scene;
+  const lantern = useGLTF(MODELS.lantern.url).scene;
+  const planks = 13;
+  const railH = 0.86;
+  const deckY = 0.3;
+  // Subtle per-plank grain tone so the oak reads hand-hewn, not machined.
+  const plankTone = (i: number) => {
+    const g = (Math.sin(i * 12.9898) * 43758.5453) % 1;
+    const m = 0.5 + Math.abs(g) * 0.5;
+    const c = new THREE.Color(WOOD).lerp(new THREE.Color(WOOD_DARK), m);
+    return `#${c.getHexString()}`;
+  };
+  const corners: [number, number][] = [
+    [-span / 2, -1],
+    [-span / 2, 1],
+    [span / 2, -1],
+    [span / 2, 1],
+  ];
   return (
     <group position={position} rotation={[0, rotationY, 0]}>
-      {/* deck planks, gently cambered */}
+      {/* Natural-stone abutments seating the deck at each bank. */}
+      {[-1, 1].map((end) => (
+        <group key={end} position={[(end * span) / 2, -0.15, 0]} rotation={[0, end * 0.6, 0]} scale={1.5}>
+          <Clone object={rockA} castShadow receiveShadow />
+        </group>
+      ))}
+
+      {/* Oak deck — cambered, plank grain varied. */}
       {Array.from({ length: planks }, (_, i) => {
         const t = i / (planks - 1);
         const x = (t - 0.5) * span;
-        const camber = Math.sin(t * Math.PI) * 0.28; // slight arch
+        const camber = Math.sin(t * Math.PI) * 0.32; // gentle arch
         return (
-          <mesh key={i} position={[x, 0.28 + camber, 0]} castShadow receiveShadow>
-            <boxGeometry args={[span / planks - 0.03, 0.08, width]} />
-            <meshStandardMaterial color={i % 2 ? WOOD : WOOD_DARK} roughness={0.9} />
+          <mesh key={i} position={[x, deckY + camber, 0]} castShadow receiveShadow>
+            <boxGeometry args={[span / planks - 0.02, 0.09, width]} />
+            <meshStandardMaterial color={plankTone(i)} roughness={0.82} metalness={0} />
           </mesh>
         );
       })}
-      {/* two rails + end posts on each side */}
+      {/* Twin oak stringers carrying the deck. */}
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[0, deckY - 0.08, (side * width) / 2 - side * 0.02]} castShadow>
+          <boxGeometry args={[span, 0.14, 0.12]} />
+          <meshStandardMaterial color={WOOD_DARK} roughness={0.85} />
+        </mesh>
+      ))}
+
+      {/* Forged-iron railings: a top rail + a mid rail on each side, on turned
+          posts, following the deck camber roughly. */}
       {[-1, 1].map((side) => (
         <group key={side}>
-          <mesh position={[0, 0.72, (side * width) / 2]} castShadow>
-            <boxGeometry args={[span, 0.06, 0.06]} />
-            <meshStandardMaterial color={WOOD} roughness={0.9} />
-          </mesh>
-          {[-1, 1].map((end) => (
-            <mesh key={end} position={[(end * span) / 2, 0.5, (side * width) / 2]} castShadow>
-              <boxGeometry args={[0.08, 0.5, 0.08]} />
-              <meshStandardMaterial color={WOOD_DARK} roughness={0.9} />
+          {[railH, railH - 0.3].map((h, r) => (
+            <mesh key={r} position={[0, deckY + h, (side * width) / 2]} castShadow>
+              <boxGeometry args={[span, 0.045, 0.045]} />
+              <meshStandardMaterial color={r === 0 ? IRON_HI : IRON} roughness={0.5} metalness={0.7} />
             </mesh>
           ))}
+          {/* balusters */}
+          {Array.from({ length: 6 }, (_, k) => {
+            const bx = ((k / 5) - 0.5) * (span - 0.4);
+            return (
+              <mesh key={k} position={[bx, deckY + railH / 2, (side * width) / 2]} castShadow>
+                <cylinderGeometry args={[0.02, 0.02, railH, 6]} />
+                <meshStandardMaterial color={IRON} roughness={0.5} metalness={0.7} />
+              </mesh>
+            );
+          })}
+        </group>
+      ))}
+
+      {/* Corner posts, each crowned with a lantern that glows warm. */}
+      {corners.map(([cx, cs], i) => (
+        <group key={i} position={[cx, deckY, (cs * width) / 2]}>
+          <mesh position={[0, railH / 2, 0]} castShadow>
+            <cylinderGeometry args={[0.05, 0.06, railH, 8]} />
+            <meshStandardMaterial color={IRON_HI} roughness={0.45} metalness={0.75} />
+          </mesh>
+          <group position={[0, railH + 0.05, 0]} scale={0.5}>
+            <Clone object={lantern} castShadow />
+          </group>
+          {/* warm integrated glow */}
+          <pointLight position={[0, railH + 0.15, 0]} intensity={0.9} distance={6} decay={2} color="#ffca74" />
+          <mesh position={[0, railH + 0.1, 0]}>
+            <sphereGeometry args={[0.09, 10, 10]} />
+            <meshBasicMaterial color="#ffdca0" toneMapped={false} />
+          </mesh>
         </group>
       ))}
     </group>
@@ -398,3 +584,8 @@ export function Fireflies({
 
 useGLTF.preload(MODELS.rock_a.url);
 useGLTF.preload(MODELS.rock_b.url);
+useGLTF.preload(MODELS.fern.url);
+useGLTF.preload(MODELS.grass_clump.url);
+useGLTF.preload(MODELS.flower_a.url);
+useGLTF.preload(MODELS.flower_b.url);
+useGLTF.preload(MODELS.lantern.url);
