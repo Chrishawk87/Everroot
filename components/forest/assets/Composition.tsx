@@ -187,21 +187,26 @@ export function Stream({
 }
 
 // ---------------------------------------------------------------------------
-// Moat — a ring of water encircling the hero-tree island, so the tree reads as a
-// sacred island reached by the footbridge. Same rippling-water look as the
-// Stream, laid out as an annulus (inner = island edge, outer = far bank). A dark
-// sunken bed sits just under it so the water reads as deep, and a thin grassy
-// verge is left to the surrounding garden.
+// Moat — a walled water basin encircling the hero-tree island, so the tree reads
+// as a sacred island reached by the footbridge.
+//
+// WHY A RAISED, WALLED BASIN (not a flat ring on the ground): the visible ground
+// is the opaque Terrain mesh at grade. A flat water ring laid at grade z-fights
+// it and gets hidden — the water only pokes through as broken slivers. So the
+// moat is built as a self-contained basin: a low stone kerb wall rises from the
+// ground and holds a raised sheet of water inside it, well ABOVE the terrain, so
+// the ring is always fully visible and reads as an intentional monument feature.
 // ---------------------------------------------------------------------------
 export function Moat({
   innerRadius,
   outerRadius,
-  y = 0.05,
+  waterLevel = 1.0,
 }: {
   innerRadius: number;
   outerRadius: number;
-  /** Water surface height. Kept just above grade so it doesn't z-fight ground. */
-  y?: number;
+  /** Height of the water surface above grade. Kept clear of the terrain so the
+   *  ring never z-fights the ground and always reads. */
+  waterLevel?: number;
 }) {
   const normal = useMemo(makeStreamNormal, []);
   // Drift the ripples slowly around the ring so the water is alive but calm.
@@ -209,28 +214,47 @@ export function Moat({
     normal.offset.x = (normal.offset.x - delta * 0.05) % 1;
     normal.offset.y = (normal.offset.y + delta * 0.02) % 1;
   });
+  const wallH = waterLevel + 0.35; // kerb crowns just above the waterline
+  const wallT = 0.6; // wall thickness
   return (
     <group>
-      {/* Sunken dark bed, a touch wider than the water so no ground shows at the
-          banks. Slightly below the water plane to give the moat visible depth. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y - 0.06, 0]} receiveShadow>
-        <ringGeometry args={[innerRadius - 0.4, outerRadius + 0.4, 128]} />
-        <meshStandardMaterial color="#241d12" roughness={1} metalness={0} side={THREE.DoubleSide} />
+      {/* Dark basin bed, spanning the full pool, sat below the waterline to give
+          the water visible depth. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, waterLevel - 0.5, 0]} receiveShadow>
+        <circleGeometry args={[outerRadius, 128]} />
+        <meshStandardMaterial color="#1c1710" roughness={1} metalness={0} />
       </mesh>
-      {/* The water ring itself. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y, 0]}>
+      {/* The water ring itself — from the island edge out to the wall. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, waterLevel, 0]}>
         <ringGeometry args={[innerRadius, outerRadius, 160]} />
         <meshStandardMaterial
-          color="#33606a"
+          color="#2f5a63"
           normalMap={normal}
-          normalScale={new THREE.Vector2(0.4, 0.4)}
-          roughness={0.08}
-          metalness={0.55}
+          normalScale={new THREE.Vector2(0.6, 0.6)}
+          roughness={0.14}
+          metalness={0.25}
           transparent
-          opacity={0.92}
-          envMapIntensity={1.4}
+          opacity={0.9}
+          envMapIntensity={0.9}
           side={THREE.DoubleSide}
         />
+      </mesh>
+      {/* Outer stone kerb wall — rises from grade and contains the pool so it
+          reads as a basin, not a floating disc of water. */}
+      <mesh position={[0, wallH / 2, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[outerRadius + wallT, outerRadius + wallT, wallH, 96, 1, true]} />
+        <meshStandardMaterial color={STONE} roughness={0.95} metalness={0} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Flat kerb cap ring across the top of the outer wall. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, wallH, 0]} receiveShadow>
+        <ringGeometry args={[outerRadius, outerRadius + wallT, 96]} />
+        <meshStandardMaterial color={STONE_DARK} roughness={0.95} metalness={0} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Inner retaining wall around the island edge, holding the water back from
+          the land so the shoreline reads crisp. */}
+      <mesh position={[0, wallH / 2, 0]} receiveShadow>
+        <cylinderGeometry args={[innerRadius, innerRadius, wallH, 96, 1, true]} />
+        <meshStandardMaterial color={STONE_DARK} roughness={0.98} metalness={0} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );

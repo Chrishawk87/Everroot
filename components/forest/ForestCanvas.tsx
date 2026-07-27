@@ -542,11 +542,16 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   // water moat, reached by the footbridge. All sizes derive from the trunk
   // height H so the composition scales with the tree. `islandR` is the land the
   // roots rest on; the moat is the ring from the island edge out to `moatOuter`.
-  const islandR = Math.max(6, H * 0.6);
-  const moatWidth = Math.max(5, H * 0.24);
+  const islandR = Math.max(5, H * 0.42); // the land the roots rest on
+  const moatWidth = Math.max(5, H * 0.24); // width of the water ring
   const moatOuter = islandR + moatWidth;
-  const bridgeZ = islandR + moatWidth / 2; // bridge sits mid-span over the moat
-  const bridgeSpan = moatWidth + 3; // overlap both banks so it lands on solid ground
+  const moatWallT = 0.6; // basin kerb thickness (matches Moat)
+  // Raise the water clearly above the Terrain so the ring is never hidden. The
+  // Moat builds a walled basin at this level (see Composition → Moat).
+  const waterLevel = Math.max(0.9, H * 0.045);
+  const bridgeZ = (islandR + moatOuter) / 2; // bridge sits mid-span over the moat
+  // Span from the island shore across to the far kerb, with overlap onto both.
+  const bridgeSpan = moatWidth + moatWallT * 2 + 3;
 
   const bark = useMemo(makeBarkTexture, []);
   const leafTex = useMemo(makeLeafTexture, []);
@@ -879,11 +884,12 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           {/* The moat: a ring of water encircling the island so the tree reads
               as a sacred island. Runs from the island edge out to moatOuter. */}
           <AssetBoundary label="moat">
-            <Moat innerRadius={islandR} outerRadius={moatOuter} y={0.06} />
+            <Moat innerRadius={islandR} outerRadius={moatOuter} waterLevel={waterLevel} />
           </AssetBoundary>
           {/* One footbridge spanning the moat from the outer bank to the island,
-              on the +Z (camera-facing) side where the path arrives. */}
-          <WoodenBridge position={[0, 0, bridgeZ]} rotationY={Math.PI / 2} span={bridgeSpan} width={2.2} />
+              on the +Z (camera-facing) side where the path arrives. Raised to the
+              waterline so it crosses OVER the basin, not through it. */}
+          <WoodenBridge position={[0, waterLevel, bridgeZ]} rotationY={Math.PI / 2} span={bridgeSpan} width={2.2} />
         </>
       )}
       {/* A winding stone path approaches from the treeline and draws the eye in
