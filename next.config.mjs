@@ -11,7 +11,12 @@ const csp = [
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-  "connect-src 'self'",
+  // three.js/GLTFLoader decodes textures embedded in .glb models by turning them
+  // into blob: URLs and fetching them via ImageBitmapLoader. fetch() is governed
+  // by connect-src (NOT img-src), so blob: must be allowed here or EVERY model's
+  // textures silently fail ("Couldn't load texture blob") — which made the hero
+  // tree render as a blown-out white silhouette with no color.
+  "connect-src 'self' blob:",
   "form-action 'self'",
 ].join("; ");
 
