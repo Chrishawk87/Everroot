@@ -53,6 +53,9 @@ export interface HeroTreeProps {
   veinGlow?: number;
   /** Glow color the vein mask is multiplied by. Warm gold by default. */
   veinColor?: THREE.ColorRepresentation;
+  /** Receives the outer world-space group once mounted, so callers can raycast
+   *  against the real tree geometry (e.g. to hang lanterns off actual branches). */
+  objectRef?: React.MutableRefObject<THREE.Object3D | null>;
 }
 
 /** Inner loader — suspends on useGLTF, so it must live under an AssetBoundary. */
@@ -62,6 +65,7 @@ function HeroTreeModel({
   scale = 1,
   veinGlow = 0,
   veinColor = "#ffcf7a",
+  objectRef,
 }: HeroTreeProps) {
   const { scene } = useGLTF(MODELS.hero_tree.url);
 
@@ -178,7 +182,14 @@ function HeroTreeModel({
   // group = the one-time normalization (unit-scale then recenter/base-drop),
   // so callers only ever think in trunk heights.
   return (
-    <group position={position} rotation={rotation} scale={scale}>
+    <group
+      ref={(g) => {
+        if (objectRef) objectRef.current = g;
+      }}
+      position={position}
+      rotation={rotation}
+      scale={scale}
+    >
       <group scale={norm.unit}>
         <primitive object={root} position={norm.offset} />
       </group>

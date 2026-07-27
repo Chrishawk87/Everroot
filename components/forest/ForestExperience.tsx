@@ -177,6 +177,7 @@ export default function ForestExperience({
           focusId={focusId}
           onSelect={setSelected}
           memorial={graph.isMemorial}
+          onOpenFamily={(userId) => router.push(`/family/${userId}`)}
         />
       </div>
 

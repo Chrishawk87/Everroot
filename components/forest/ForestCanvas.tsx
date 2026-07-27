@@ -523,9 +523,11 @@ interface Props {
   focusId: string | null;
   onSelect: (node: ForestNodeDTO | null) => void;
   memorial?: boolean;
+  /** Navigate to a linked family member's own forest (their /family/[userId]). */
+  onOpenFamily?: (userId: string) => void;
 }
 
-export default function ForestCanvas({ graph, selectedId, focusId, onSelect, memorial = false }: Props) {
+export default function ForestCanvas({ graph, selectedId, focusId, onSelect, memorial = false, onOpenFamily }: Props) {
   const layout = useMemo(() => computeLayout(graph), [graph]);
   // The tree's height is the master dimension of the whole composition — camera,
   // fog, shadows, the Legacy Plaza, the path, the stream and the surrounding
@@ -700,7 +702,6 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     const H = layout.trunkHeight;
     const attachR = H * 0.6; // inside the ~0.83·H outer canopy, near its edge
     const attachY = H * 0.62; // in the broad foliage band, up under the leaves
-    const drop = H * 0.22; // cord length — lantern emerges below the leaves
     const size = Math.max(1.1, H * 0.12); // lantern scaled to the tree
     return branches.map((p, i) => {
       const key = `catlantern${p.node.id}`;
@@ -712,6 +713,9 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       const R = attachR * (0.94 + hash01(key, 7) * 0.12);
       const y = attachY + (hash01(key, 5) - 0.5) * H * 0.1;
       const tip: Vec3 = [Math.cos(a) * R, y, Math.sin(a) * R];
+      // Staggered cord lengths — every lantern hangs at a DIFFERENT height so
+      // they read as strung individually through the canopy, not a level ring.
+      const drop = H * (0.16 + hash01(key, 17) * 0.2);
       return {
         node: p.node,
         position: tip,
@@ -721,6 +725,45 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         drop,
         size,
         light: H * 0.4, // point-light radius, kept in world units
+      };
+    });
+  }, [layout.positioned, layout.trunkHeight]);
+
+  // Family lanterns: every PERSON in the family tree also hangs as a lantern on
+  // the hero tree — one lantern per relative. They ring an INNER band (closer to
+  // the trunk, and a touch lower) than the category lanterns so the two rings
+  // read as distinct, and they carry a cool moonlight tint so people read
+  // differently from the warm category "chapter" lanterns. Clicking one opens
+  // that person: if their account is linked we sail into THEIR forest; if not,
+  // their info panel + invite link opens (handled at the click site).
+  const familyLanterns = useMemo(() => {
+    const people = layout.positioned.filter((p) => p.node.kind === "PERSON");
+    const N = Math.max(1, people.length);
+    const H = layout.trunkHeight;
+    const attachR = H * 0.42; // inner band, closer to the trunk than categories
+    const attachY = H * 0.5; // a touch lower in the canopy
+    const size = Math.max(0.95, H * 0.1); // slightly smaller than categories
+    return people.map((p, i) => {
+      const key = `famlantern${p.node.id}`;
+      // Offset the family ring half a step so a person never sits directly under
+      // a category lantern.
+      const angle = (i / N) * Math.PI * 2 + Math.PI / 2 + Math.PI / N;
+      const jitter = (hash01(key, 3) - 0.5) * 0.22;
+      const a = angle + jitter;
+      const R = attachR * (0.9 + hash01(key, 7) * 0.16);
+      const y = attachY + (hash01(key, 5) - 0.5) * H * 0.1;
+      const tip: Vec3 = [Math.cos(a) * R, y, Math.sin(a) * R];
+      const drop = H * (0.14 + hash01(key, 17) * 0.18); // staggered heights too
+      return {
+        node: p.node,
+        position: tip,
+        title: p.node.title,
+        color: "#cfe4ff", // moonlight tint — family reads as people
+        phase: hash01(key, 13) * Math.PI * 2,
+        drop,
+        size,
+        light: H * 0.34,
+        linkedUserId: p.node.linkedUserId ?? null,
       };
     });
   }, [layout.positioned, layout.trunkHeight]);
@@ -760,6 +803,11 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
     }
     return m;
   }, [graph, layout]);
+
+  // The loaded hero-tree GLB object, in world space. Lanterns raycast against it
+  // so their cords attach to the actual canopy/branch surface (the tree is one
+  // opaque mesh — there's no separate branch geometry to parent to).
+  const heroRef = useRef<THREE.Object3D | null>(null);
 
   // Shared state the day-cycle writes and the constellations read (0 day → 1 night).
   const nightRef = useRef(memorial ? 0.6 : 0);
@@ -895,6 +943,33 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             selected={c.node.id === selectedId}
             nightRef={nightRef}
             onSelect={onSelect}
+            heroRef={heroRef}
+          />
+        ))}
+      </AssetBoundary>
+
+      {/* Family lanterns — one per relative in the family tree, hung on an inner
+          band of the same canopy. Click one to open that person: a linked
+          account sails into their own forest; an unlinked person opens their
+          info panel + invite link. */}
+      <AssetBoundary label="family lanterns">
+        {familyLanterns.map((c) => (
+          <CategoryLantern
+            key={c.node.id}
+            node={c.node}
+            position={c.position}
+            title={c.title}
+            color={c.color}
+            phase={c.phase}
+            drop={c.drop}
+            size={c.size}
+            light={c.light}
+            selected={c.node.id === selectedId}
+            nightRef={nightRef}
+            onSelect={onSelect}
+            heroRef={heroRef}
+            linkedUserId={c.linkedUserId}
+            onOpenFamily={onOpenFamily}
           />
         ))}
       </AssetBoundary>
@@ -963,7 +1038,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           lit naturally by the scene; drive it 0..1 (e.g. from the opening
           camera's beat-4 ignition) to surge the memory-veins. */}
       {USE_HERO_TREE ? (
-        <HeroTree scale={H} veinGlow={0} />
+        <HeroTree scale={H} veinGlow={0} objectRef={heroRef} />
       ) : (
         <>
           {/* Woody structure: a thick base to the fork height, then the two great
@@ -1026,11 +1101,12 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 
       {/* The floating memory glyphs and the threads between them were removed:
           against the hero mesh they hung in empty space around the canopy. Every
-          memory now lives inside its category lantern instead. The only glyphs
-          that remain are the underground family/heritage nodes (PERSON/ROOT),
-          which surface as the camera dips below the earth. */}
+          memory now lives inside its category lantern instead. Family PEOPLE now
+          hang as their own lanterns on the tree (see family lanterns above), so
+          only the heritage ROOT nodes remain underground, surfacing as the
+          camera dips below the earth. */}
       {layout.positioned
-        .filter((p) => p.node.kind === "PERSON" || p.node.kind === "ROOT")
+        .filter((p) => p.node.kind === "ROOT")
         .map((p) => (
           <NodeGlyph
             key={p.node.id}
@@ -2251,6 +2327,12 @@ const _lblCamDir = new THREE.Vector3();
 const _lblToNode = new THREE.Vector3();
 const _catOut = new THREE.Vector3();
 const _catToCam = new THREE.Vector3();
+// Reused for anchoring each lantern's cord onto the REAL hero-tree geometry:
+// we cast a ray straight UP from a point below the lantern's column and take
+// the first hit on the actual mesh as the branch/foliage the cord hangs from.
+const _rayUp = new THREE.Vector3(0, 1, 0);
+const _rayFrom = new THREE.Vector3();
+const _lanternRaycaster = new THREE.Raycaster();
 
 // ---------------------------------------------------------------------------
 // CategoryLantern — one hangs from each main branch and IS a category. Every
@@ -2270,6 +2352,9 @@ function CategoryLantern({
   selected,
   nightRef,
   onSelect,
+  heroRef,
+  linkedUserId,
+  onOpenFamily,
 }: {
   node: ForestNodeDTO;
   position: Vec3;
@@ -2282,6 +2367,12 @@ function CategoryLantern({
   selected: boolean;
   nightRef: React.MutableRefObject<number>;
   onSelect: (node: ForestNodeDTO | null) => void;
+  /** The real hero-tree object, so the cord can be anchored onto actual geometry. */
+  heroRef?: React.MutableRefObject<THREE.Object3D | null>;
+  /** Family variant: the linked account this person owns (null if not linked). */
+  linkedUserId?: string | null;
+  /** Family variant: navigate into a linked person's own forest. */
+  onOpenFamily?: (userId: string) => void;
 }) {
   const { scene } = useGLTF(MODELS.lantern.url);
   const swingRef = useRef<THREE.Group>(null);
@@ -2292,10 +2383,31 @@ function CategoryLantern({
   const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const appear = useRef(0);
+  // Once we've cast a ray onto the real tree and found the branch the cord hangs
+  // from, we lock the group's Y there. Until then we keep re-trying each frame
+  // (the GLB loads async, so heroRef geometry isn't there on the first frames).
+  const anchored = useRef(false);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
     const night = nightRef?.current ?? 0;
+    // Anchor the cord's TOP onto the real hero-tree geometry: cast a ray
+    // straight UP the lantern's column and drop the group onto the first branch/
+    // foliage surface it hits, so the cord visibly emerges from the tree instead
+    // of floating in empty air. Resolved once per lantern.
+    if (!anchored.current && heroRef?.current && groupRef.current) {
+      // Start below the lantern's intended attach point and cast upward; the
+      // first hit is the underside of the branch/foliage right above it.
+      const startY = Math.max(1, position[1] - drop);
+      _rayFrom.set(position[0], startY, position[2]);
+      _lanternRaycaster.set(_rayFrom, _rayUp);
+      _lanternRaycaster.far = (position[1] - startY) + drop + 2;
+      const hits = _lanternRaycaster.intersectObject(heroRef.current, true);
+      if (hits.length > 0) {
+        groupRef.current.position.y = hits[0].point.y;
+        anchored.current = true;
+      }
+    }
     if (swingRef.current) {
       swingRef.current.rotation.z = Math.sin(t * 0.7 + phase) * 0.05;
       swingRef.current.rotation.x = Math.cos(t * 0.5 + phase) * 0.035;
@@ -2326,6 +2438,13 @@ function CategoryLantern({
 
   const select = (e: { stopPropagation: () => void }) => {
     e.stopPropagation();
+    // Family lantern for a LINKED relative → sail into their own forest.
+    if (linkedUserId && onOpenFamily) {
+      onOpenFamily(linkedUserId);
+      return;
+    }
+    // Category lantern, or an unlinked family member → open its panel (the
+    // family panel carries the invite link for people who haven't joined yet).
     onSelect(node);
   };
 
