@@ -545,13 +545,17 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   const islandR = Math.max(5, H * 0.42); // the land the roots rest on
   const moatWidth = Math.max(5, H * 0.24); // width of the water ring
   const moatOuter = islandR + moatWidth;
-  const moatWallT = 0.6; // basin kerb thickness (matches Moat)
-  // Raise the water clearly above the Terrain so the ring is never hidden. The
-  // Moat builds a walled basin at this level (see Composition → Moat).
-  const waterLevel = Math.max(0.9, H * 0.045);
-  const bridgeZ = (islandR + moatOuter) / 2; // bridge sits mid-span over the moat
-  // Span from the island shore across to the far kerb, with overlap onto both.
-  const bridgeSpan = moatWidth + moatWallT * 2 + 3;
+  const moatWallT = 0.6; // (retained for callers; the moat no longer walls)
+  // The terrain is a flat plane at y=0, so a shallow spring sits just above
+  // grade like the lake (which rides fine at 0.06). Low water keeps the pool
+  // reading as a stream worn into the land, not a raised basin.
+  const waterLevel = Math.max(0.14, H * 0.006);
+  // Land the bridge's island end right ON the island rim (not out over the root
+  // flare) and rest its far end on the outer bank.
+  const bridgeInner = islandR - 0.4;
+  const bridgeOuter = moatOuter + 1.6;
+  const bridgeSpan = bridgeOuter - bridgeInner;
+  const bridgeZ = (bridgeInner + bridgeOuter) / 2;
 
   const bark = useMemo(makeBarkTexture, []);
   const leafTex = useMemo(makeLeafTexture, []);
@@ -894,7 +898,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           {/* One footbridge spanning the moat from the outer bank to the island,
               on the +Z (camera-facing) side where the path arrives. Raised to the
               waterline so it crosses OVER the basin, not through it. */}
-          <WoodenBridge position={[0, waterLevel, bridgeZ]} rotationY={Math.PI / 2} span={bridgeSpan} width={2.2} />
+          <WoodenBridge position={[0, 0, bridgeZ]} rotationY={Math.PI / 2} span={bridgeSpan} width={2.2} />
         </>
       )}
       {/* A winding stone path approaches from the treeline and draws the eye in

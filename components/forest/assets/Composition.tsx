@@ -107,7 +107,7 @@ export function StonePath({
   return (
     <group>
       {stones.map((s, i) => (
-        <mesh key={i} position={[s.x, 0.04, s.z]} rotation={[-Math.PI / 2, 0, s.rot]} receiveShadow>
+        <mesh key={i} position={[s.x, 0.04, s.z]} rotation={[0, s.rot, 0]} receiveShadow>
           <cylinderGeometry args={[s.s, s.s * 0.92, 0.12, 10]} />
           <meshStandardMaterial color={i % 2 ? STONE : STONE_DARK} roughness={0.98} metalness={0} />
         </mesh>
@@ -314,7 +314,7 @@ export function Moat({
         } else if (roll < 0.5) {
           kind = 1; // pebble/cobble in the shallows
           s = 0.25 + rnd() * 0.4;
-          y = waterLevel - 0.15 - rnd() * 0.2;
+          y = waterLevel - 0.04 - rnd() * 0.06;
         } else if (roll < 0.68) {
           kind = 3; // grass clump
           s = 0.7 + rnd() * 0.7;
@@ -354,7 +354,7 @@ export function Moat({
   return (
     <group>
       {/* Spring bed — dark, wet mineral floor giving the water real depth. */}
-      <mesh geometry={bedGeo} position={[0, waterLevel - 0.55, 0]} receiveShadow>
+      <mesh geometry={bedGeo} position={[0, waterLevel - 0.1, 0]} receiveShadow>
         <meshStandardMaterial color="#15120b" roughness={1} metalness={0} />
       </mesh>
       {/* The spring water itself — an irregular sheet, glassy and reflective,
@@ -421,9 +421,10 @@ export function WoodenBridge({
   ];
   return (
     <group position={position} rotation={[0, rotationY, 0]}>
-      {/* Natural-stone abutments seating the deck at each bank. */}
+      {/* Natural-stone footings seating the deck at each bank — kept low and
+          modest so they read as support, never as a boulder blocking the path. */}
       {[-1, 1].map((end) => (
-        <group key={end} position={[(end * span) / 2, -0.15, 0]} rotation={[0, end * 0.6, 0]} scale={1.5}>
+        <group key={end} position={[(end * span) / 2, -0.2, (end * width) / 2]} rotation={[0, end * 0.6, 0]} scale={0.8}>
           <Clone object={rockA} castShadow receiveShadow />
         </group>
       ))}
