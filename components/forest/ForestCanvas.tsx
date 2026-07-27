@@ -882,8 +882,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           the origin, drops its underside to y=0 so the WHOLE plate rests on the
           ground (never half-buried), and sizes it by `radius`. The trunk rises
           from its centre. `radius` is the one knob to retune the platform's
-          spread — a touch wider than the trunk's foot, well inside the crown. */}
-      {USE_HERO_TREE ? <HeroBase radius={H * 0.3} position={[0, 0, 0]} /> : null}
+          spread — set wide enough to read as a plate AROUND the tree's root
+          flare (otherwise the roots hang over it and hide it). A hair of lift
+          on Y keeps its underside from z-fighting the ground plane. */}
+      {USE_HERO_TREE ? <HeroBase radius={H * 0.55} position={[0, H * 0.01, 0]} /> : null}
 
       {/* THE HERO TREE — the one authored/imported central tree. Planted at the
           origin, scaled to the master trunk height H so it drives the whole
@@ -929,8 +931,13 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         <Canopy center={crownCenter} radius={crown.r} count={crown.count} leafTex={leafTex} anchors={leafAnchors} />
       ) : null}
 
-      {/* Volumetric sunlight raking down through the canopy toward the plaza. */}
-      {crown.r > 0 ? (
+      {/* Volumetric sunlight raking down through the canopy toward the plaza.
+          The shafts are flat additive billboard planes sized/placed to the
+          GENERATIVE crown (spread ~height*0.7 wide at height*0.55). Against the
+          hero mesh they no longer track the real canopy and read as pale flat
+          sheets jutting out of the tree's sides — so, like the other crown
+          decorations, they're only drawn for the generative tree. */}
+      {!USE_HERO_TREE && crown.r > 0 ? (
         <GodRays center={crownCenter} height={H} sun={atmo.sun} nightRef={nightRef} />
       ) : null}
 
