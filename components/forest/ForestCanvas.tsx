@@ -688,24 +688,36 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   // in that category's language. This replaces the old per-memory lanterns and
   // the floating memory glyphs/threads.
   const categoryLanterns = useMemo(() => {
-    return layout.positioned
-      .filter((p) => p.node.kind === "BRANCH")
-      .map((p) => {
-        const key = `catlantern${p.node.id}`;
-        return {
-          node: p.node,
-          // dangle a touch below the branch tip so it reads as hung from the bough
-          position: [
-            p.position[0],
-            p.position[1] - 0.7,
-            p.position[2],
-          ] as Vec3,
-          title: p.node.title,
-          color: CATEGORY_COLORS[p.node.title] ?? "#ffd9a0",
-          phase: hash01(key, 13) * Math.PI * 2,
-        };
-      });
-  }, [layout.positioned]);
+    const branches = layout.positioned.filter((p) => p.node.kind === "BRANCH");
+    const N = Math.max(1, branches.length);
+    const crownR = layout.crownRadius;
+    const crownY = layout.trunkHeight * 0.9;
+    return branches.map((p, i) => {
+      const key = `catlantern${p.node.id}`;
+      // Ring the categories evenly ALL THE WAY AROUND the tree, first one facing
+      // the camera (+Z) so the front reads immediately. Each gets its own bough
+      // that springs from near the trunk out to a tip at the lower-canopy edge;
+      // the lantern then drops on a cord and hangs BELOW the foliage.
+      const angle = (i / N) * Math.PI * 2 + Math.PI / 2;
+      const jitter = (hash01(key, 3) - 0.5) * 0.18; // break perfect symmetry
+      const a = angle + jitter;
+      const R = crownR * (0.9 + hash01(key, 7) * 0.1); // tip near the canopy edge
+      const tipY = crownY - crownR * 0.5 + (hash01(key, 5) - 0.5) * crownR * 0.18;
+      const tip: Vec3 = [Math.cos(a) * R, tipY, Math.sin(a) * R];
+      // the bough springs from a point nearer the trunk and a touch higher, so it
+      // reads as a real limb reaching out and down to hold the lantern
+      const inR = crownR * 0.2;
+      const from: Vec3 = [Math.cos(a) * inR, tipY + crownR * 0.3, Math.sin(a) * inR];
+      return {
+        node: p.node,
+        position: tip,
+        branchFrom: from,
+        title: p.node.title,
+        color: CATEGORY_COLORS[p.node.title] ?? "#ffd9a0",
+        phase: hash01(key, 13) * Math.PI * 2,
+      };
+    });
+  }, [layout.positioned, layout.crownRadius, layout.trunkHeight]);
 
   // Flower positions in the garden — butterflies keep close to these instead of
   // wandering the whole clearing.
@@ -867,6 +879,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             key={c.node.id}
             node={c.node}
             position={c.position}
+            branchFrom={c.branchFrom}
             title={c.title}
             color={c.color}
             phase={c.phase}
@@ -2227,6 +2240,8 @@ function StarNode({
 const _lblWorld = new THREE.Vector3();
 const _lblCamDir = new THREE.Vector3();
 const _lblToNode = new THREE.Vector3();
+const _catOut = new THREE.Vector3();
+const _catToCam = new THREE.Vector3();
 
 // ---------------------------------------------------------------------------
 // CategoryLantern — one hangs from each main branch and IS a category. Every
@@ -2237,6 +2252,7 @@ const _lblToNode = new THREE.Vector3();
 function CategoryLantern({
   node,
   position,
+  branchFrom,
   title,
   color,
   phase,
@@ -2246,6 +2262,7 @@ function CategoryLantern({
 }: {
   node: ForestNodeDTO;
   position: Vec3;
+  branchFrom: Vec3;
   title: string;
   color: string;
   phase: number;
@@ -2254,12 +2271,32 @@ function CategoryLantern({
   onSelect: (node: ForestNodeDTO | null) => void;
 }) {
   const { scene } = useGLTF(MODELS.lantern.url);
-  const groupRef = useRef<THREE.Group>(null);
   const swingRef = useRef<THREE.Group>(null);
+  const bodyRef = useRef<THREE.Group>(null);
   const lightRef = useRef<THREE.PointLight>(null);
   const coreRef = useRef<THREE.MeshStandardMaterial>(null);
+  const labelRef = useRef<HTMLDivElement>(null);
+  const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const appear = useRef(0);
+
+  // The bough that springs from the trunk out to this lantern's tip. Computed in
+  // the group's local space (the group sits at the tip), so it points back
+  // toward `branchFrom`. A tapered cylinder = a real reaching limb.
+  const bough = useMemo(() => {
+    const f = new THREE.Vector3(
+      branchFrom[0] - position[0],
+      branchFrom[1] - position[1],
+      branchFrom[2] - position[2],
+    );
+    const len = f.length();
+    const mid = f.clone().multiplyScalar(0.5);
+    const quat = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      f.clone().normalize(),
+    );
+    return { len, mid, quat, rBase: Math.max(0.06, len * 0.05), rTip: Math.max(0.025, len * 0.02) };
+  }, [branchFrom, position]);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
@@ -2269,16 +2306,26 @@ function CategoryLantern({
       swingRef.current.rotation.x = Math.cos(t * 0.5 + phase) * 0.035;
     }
     const flicker = 0.92 + Math.sin(t * 5 + phase) * 0.08;
-    const emphasis = selected ? 1.25 : hovered ? 1.12 : 1;
-    if (groupRef.current) {
+    const emphasis = selected ? 1.3 : hovered ? 1.14 : 1;
+    if (bodyRef.current) {
       appear.current = THREE.MathUtils.damp(appear.current, emphasis, 6, delta);
-      groupRef.current.scale.setScalar(appear.current);
+      bodyRef.current.scale.setScalar(1.15 * appear.current);
     }
     if (lightRef.current) {
       lightRef.current.intensity = (1.4 + night * 2.6 + (selected ? 1.5 : 0)) * flicker;
     }
     if (coreRef.current) {
       coreRef.current.emissiveIntensity = (2.0 + night * 2.4 + (selected ? 1.2 : 0)) * flicker;
+    }
+    // Fade the label out on the far side of the tree so only the lanterns facing
+    // the camera show their name — the front always reads cleanly.
+    if (labelRef.current && groupRef.current) {
+      groupRef.current.getWorldPosition(_lblWorld);
+      _catOut.set(_lblWorld.x, 0, _lblWorld.z).normalize();
+      _catToCam.copy(state.camera.position).sub(_lblWorld).setY(0).normalize();
+      const facing = _catOut.dot(_catToCam); // 1 = lantern is on the camera side
+      const op = THREE.MathUtils.clamp((facing + 0.15) / 0.6, 0, 1);
+      labelRef.current.style.opacity = ((selected || hovered ? 1 : 0.92) * op).toFixed(3);
     }
   });
 
@@ -2302,15 +2349,20 @@ function CategoryLantern({
       }}
       onClick={select}
     >
-      {/* the cord's top pivot sits at the branch; the lantern hangs and sways
-          below it as one pendulum */}
+      {/* the bough reaching from the trunk out to this tip */}
+      <mesh position={bough.mid.toArray()} quaternion={bough.quat} castShadow>
+        <cylinderGeometry args={[bough.rTip, bough.rBase, bough.len, 7]} />
+        <meshStandardMaterial color="#4e341f" roughness={0.95} metalness={0} />
+      </mesh>
+
+      {/* the cord + lantern hang and sway from the tip as one pendulum */}
       <group ref={swingRef}>
-        <mesh position={[0, 0.7, 0]}>
-          <cylinderGeometry args={[0.02, 0.02, 1.4, 6]} />
+        <mesh position={[0, -0.6, 0]}>
+          <cylinderGeometry args={[0.02, 0.02, 1.2, 6]} />
           <meshStandardMaterial color="#2a1f12" roughness={1} />
         </mesh>
         {/* lantern body — sized large so it reads as the tree's chapter marker */}
-        <group position={[0, -0.2, 0]} scale={1.15}>
+        <group ref={bodyRef} position={[0, -1.4, 0]}>
           <Clone object={scene} castShadow receiveShadow />
           {/* warm core, tinted to the category's color */}
           <mesh position={[0, 0.15, 0]}>
@@ -2333,17 +2385,20 @@ function CategoryLantern({
           />
         </group>
       </group>
+
       {/* the category name floats beside the lantern as its label / entry point */}
-      <Html center distanceFactor={14} position={[0, 1.15, 0]} zIndexRange={[20, 0]}>
+      <Html center distanceFactor={14} position={[0, -1.0, 0]} zIndexRange={[20, 0]}>
         <div
+          ref={labelRef}
           onClick={select}
-          className="cursor-pointer select-none whitespace-nowrap rounded-full border px-3 py-1 font-serif text-xs [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]"
           style={{
+            opacity: 0,
             color: "#f5ecd8",
             borderColor: color,
             background: selected || hovered ? "rgba(0,0,0,0.82)" : "rgba(0,0,0,0.6)",
             boxShadow: selected || hovered ? `0 0 14px ${color}` : "none",
           }}
+          className="cursor-pointer select-none whitespace-nowrap rounded-full border px-3 py-1 font-serif text-xs [text-shadow:0_1px_5px_rgba(0,0,0,0.95)]"
         >
           {title}
         </div>
