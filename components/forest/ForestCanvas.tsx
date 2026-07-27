@@ -13,7 +13,6 @@ import {
   HdriEnvironment,
   Terrain,
   Water,
-  Model,
   Scatter,
   Lanterns,
   Birds,
@@ -23,6 +22,7 @@ import {
 } from "@/components/forest/assets";
 import { LegacyPlaza, StonePath, Stream, WoodenBridge, Fireflies } from "@/components/forest/assets/Composition";
 import { HeroTree } from "@/components/forest/HeroTree";
+import { HeroBase } from "@/components/forest/HeroBase";
 
 // The central tree is now the ONE authored/imported hero mesh
 // (public/assets/models/hero/hero_tree.glb), per the EverRoot Studios pipeline:
@@ -878,15 +878,12 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} nightRef={nightRef} />
 
       {/* THE HERO BASE — the authored platform/island the tree sits in the
-          middle of. Centered on the origin at the trunk's foot. baseScale sizes
-          it (the source mesh is ~2 units across); baseLift nudges it up/down so
-          the trunk emerges cleanly from its centre. Both are easy knobs to
-          retune once it's seen live. */}
-      {USE_HERO_TREE ? (
-        <AssetBoundary label="hero_base">
-          <Model url={MODELS.hero_base.url} scale={H * 0.32} position={[0, 0, 0]} />
-        </AssetBoundary>
-      ) : null}
+          middle of. HeroBase self-normalizes the source disc: it recenters it on
+          the origin, drops its underside to y=0 so the WHOLE plate rests on the
+          ground (never half-buried), and sizes it by `radius`. The trunk rises
+          from its centre. `radius` is the one knob to retune the platform's
+          spread — a touch wider than the trunk's foot, well inside the crown. */}
+      {USE_HERO_TREE ? <HeroBase radius={H * 0.3} position={[0, 0, 0]} /> : null}
 
       {/* THE HERO TREE — the one authored/imported central tree. Planted at the
           origin, scaled to the master trunk height H so it drives the whole

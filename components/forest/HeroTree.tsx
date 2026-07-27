@@ -96,9 +96,23 @@ function HeroTreeModel({
   // into the emissive slot; here we simply gather the materials so useFrame can
   // ramp their emissiveIntensity. If the mask ships as a separate texture +
   // custom shader instead, swap this block for the uniform it exposes.
+  // Collect the 8 named category limbs and every emissive-carrying material,
+  // capturing each material's AUTHORED emissive baseline (color + intensity).
+  //
+  // CRITICAL: many imported/AI-lifted tree meshes bake their entire visible
+  // color into the emissive channel (emissiveFactor [1,1,1] + emissiveTexture)
+  // for an "unlit" look. If we drove emissiveIntensity toward 0 and lerped the
+  // color to gold — as an earlier version did — we ERASED the tree's real
+  // colors, leaving it a flat brown silhouette under the golden fog. So we snap
+  // a baseline here and, in useFrame, only ADD vein glow ON TOP of it. At
+  // veinGlow=0 the material is left EXACTLY as authored: full original color.
   const { limbs, veinMaterials } = useMemo(() => {
     const limbMap = new Map<HeroLimbName, THREE.Object3D>();
-    const mats = new Set<THREE.MeshStandardMaterial>();
+    const mats: {
+      mat: THREE.MeshStandardMaterial;
+      baseIntensity: number;
+      baseColor: THREE.Color;
+    }[] = [];
     const nameSet = new Set<string>(HERO_LIMB_NAMES);
 
     root.traverse((obj: THREE.Object3D) => {
@@ -109,11 +123,12 @@ function HeroTreeModel({
       if (mesh.isMesh && mesh.material) {
         const applyMat = (m: THREE.Material) => {
           const std = m as THREE.MeshStandardMaterial;
-          // Heuristic: treat any material with an emissive map / non-black
-          // emissive as a vein-carrying material. The bake gives us this.
           if (std.emissive || std.emissiveMap) {
-            std.emissive = std.emissive ?? new THREE.Color(veinColor);
-            mats.add(std);
+            mats.push({
+              mat: std,
+              baseIntensity: std.emissiveIntensity ?? 1,
+              baseColor: (std.emissive ?? new THREE.Color(0x000000)).clone(),
+            });
           }
         };
         if (Array.isArray(mesh.material)) mesh.material.forEach(applyMat);
@@ -130,7 +145,7 @@ function HeroTreeModel({
       );
     }
     return { limbs: limbMap, veinMaterials: mats };
-  }, [root, veinColor]);
+  }, [root]);
 
   // Expose limbs for future runtime modifiers (tilt/extend/tint by category
   // weight). Kept in a ref so the "grows inward" layer can read them without
@@ -139,17 +154,23 @@ function HeroTreeModel({
   limbsRef.current = limbs;
 
   const targetColor = useMemo(() => new THREE.Color(veinColor), [veinColor]);
+  const scratch = useMemo(() => new THREE.Color(), []);
 
-  // Ramp the vein emissive toward the requested glow each frame (smoothed).
+  // Overlay vein glow ON TOP of each material's authored baseline. veinGlow=0 ⇒
+  // baseline preserved exactly (tree keeps its real color). >0 ⇒ intensity is
+  // lifted and the color is nudged toward the warm vein gold, proportionally.
   useFrame(() => {
-    const target = THREE.MathUtils.clamp(veinGlow, 0, 1);
-    veinMaterials.forEach((m) => {
-      m.emissiveIntensity = THREE.MathUtils.lerp(
-        m.emissiveIntensity ?? 0,
-        target,
+    const g = THREE.MathUtils.clamp(veinGlow, 0, 1);
+    veinMaterials.forEach(({ mat, baseIntensity, baseColor }) => {
+      const targetIntensity = baseIntensity + g * 1.5;
+      mat.emissiveIntensity = THREE.MathUtils.lerp(
+        mat.emissiveIntensity ?? baseIntensity,
+        targetIntensity,
         0.08,
       );
-      m.emissive.lerp(targetColor, 0.08);
+      // Start from the authored color, blend toward gold only as glow rises.
+      scratch.copy(baseColor).lerp(targetColor, g * 0.6);
+      mat.emissive.lerp(scratch, 0.08);
     });
   });
 
