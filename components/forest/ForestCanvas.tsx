@@ -81,9 +81,9 @@ const DAY_ATMOSPHERE: Atmosphere = {
   background: "#dcb173",
   sky: { turbidity: 5, rayleigh: 2.2, mieCoefficient: 0.016, mieDirectionalG: 0.8 },
   fog: { color: "#d9b478", near: 44, far: 140 },
-  ambient: 0.28,
-  hemi: { sky: "#f2dca6", ground: "#3f4a2c", intensity: 0.42 },
-  dir: { color: "#ffc276", intensity: 1.05 },
+  ambient: 0.42,
+  hemi: { sky: "#f6e3b4", ground: "#4a552f", intensity: 0.58 },
+  dir: { color: "#ffca82", intensity: 1.35 },
   motes: { color: "#ffe2a6", opacity: 0.42 },
 };
 
@@ -690,29 +690,40 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   const categoryLanterns = useMemo(() => {
     const branches = layout.positioned.filter((p) => p.node.kind === "BRANCH");
     const N = Math.max(1, branches.length);
-    const crownR = layout.crownRadius;
-    const crownY = layout.trunkHeight * 0.9;
+    // The hero tree is one broad canopy mesh: measured from hero_tree.glb, its
+    // half-width is ~0.83× its height and it spans the full trunk height H, with
+    // the widest foliage around mid-height. So we anchor each cord's TOP INSIDE
+    // that real canopy (not the generative crown, which is a different size —
+    // that mismatch is what left the cords floating in empty air). The attach
+    // point sits just inside the outer foliage at its broadest band; the lantern
+    // then hangs straight down on its cord and emerges below the leaves.
+    const H = layout.trunkHeight;
+    const attachR = H * 0.6; // inside the ~0.83·H outer canopy, near its edge
+    const attachY = H * 0.62; // in the broad foliage band, up under the leaves
+    const drop = H * 0.22; // cord length — lantern emerges below the leaves
+    const size = Math.max(1.1, H * 0.12); // lantern scaled to the tree
     return branches.map((p, i) => {
       const key = `catlantern${p.node.id}`;
       // Ring the categories evenly ALL THE WAY AROUND the tree, first one facing
-      // the camera (+Z) so the front reads immediately. Each gets its own bough
-      // that springs from near the trunk out to a tip at the lower-canopy edge;
-      // the lantern then drops on a cord and hangs BELOW the foliage.
+      // the camera (+Z) so the front reads immediately.
       const angle = (i / N) * Math.PI * 2 + Math.PI / 2;
       const jitter = (hash01(key, 3) - 0.5) * 0.18; // break perfect symmetry
       const a = angle + jitter;
-      const R = crownR * (0.9 + hash01(key, 7) * 0.1); // tip near the canopy edge
-      const tipY = crownY - crownR * 0.5 + (hash01(key, 5) - 0.5) * crownR * 0.18;
-      const tip: Vec3 = [Math.cos(a) * R, tipY, Math.sin(a) * R];
+      const R = attachR * (0.94 + hash01(key, 7) * 0.12);
+      const y = attachY + (hash01(key, 5) - 0.5) * H * 0.1;
+      const tip: Vec3 = [Math.cos(a) * R, y, Math.sin(a) * R];
       return {
         node: p.node,
         position: tip,
         title: p.node.title,
         color: CATEGORY_COLORS[p.node.title] ?? "#ffd9a0",
         phase: hash01(key, 13) * Math.PI * 2,
+        drop,
+        size,
+        light: H * 0.4, // point-light radius, kept in world units
       };
     });
-  }, [layout.positioned, layout.crownRadius, layout.trunkHeight]);
+  }, [layout.positioned, layout.trunkHeight]);
 
   // Flower positions in the garden — butterflies keep close to these instead of
   // wandering the whole clearing.
@@ -771,15 +782,16 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       dpr={[1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.82 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.94 }}
       onPointerMissed={() => onSelect(null)}
     >
       <color attach="background" args={[atmo.background]} />
       <Sky ref={skyRef} distance={450000} sunPosition={atmo.sun} turbidity={atmo.sky.turbidity} rayleigh={atmo.sky.rayleigh} mieCoefficient={atmo.sky.mieCoefficient} mieDirectionalG={atmo.sky.mieDirectionalG} />
-      {/* Fog is scaled to the tree: it starts just past the tree and thickens
-          toward the distance, so the monument stays crisp while the pushed-back
-          mountains melt into atmosphere. */}
-      <fog attach="fog" args={[atmo.fog.color, H * 1.1, H * 5.2]} />
+      {/* Fog pushed WAY out past the mountains (which sit at ~H*4–4.8) so the
+          whole background — tree, hills, horizon — reads crisp and clear. Only
+          the extreme far distance gets the faintest atmospheric fade into the
+          sky; no more haze hanging behind the tree. */}
+      <fog attach="fog" args={[atmo.fog.color, H * 5.5, H * 16]} />
 
       <ambientLight ref={ambientRef} intensity={atmo.ambient} />
       <hemisphereLight ref={hemiRef} args={[atmo.hemi.sky, atmo.hemi.ground, atmo.hemi.intensity]} />
@@ -814,8 +826,8 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         hemiRef={hemiRef}
         dirRef={dirRef}
         skyRef={skyRef}
-        fogNear={H * 1.1}
-        fogFar={H * 5.2}
+        fogNear={H * 5.5}
+        fogFar={H * 16}
         worldH={H}
       />
 
@@ -877,6 +889,9 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             title={c.title}
             color={c.color}
             phase={c.phase}
+            drop={c.drop}
+            size={c.size}
+            light={c.light}
             selected={c.node.id === selectedId}
             nightRef={nightRef}
             onSelect={onSelect}
@@ -2249,6 +2264,9 @@ function CategoryLantern({
   title,
   color,
   phase,
+  drop,
+  size,
+  light,
   selected,
   nightRef,
   onSelect,
@@ -2258,6 +2276,9 @@ function CategoryLantern({
   title: string;
   color: string;
   phase: number;
+  drop: number;
+  size: number;
+  light: number;
   selected: boolean;
   nightRef: React.MutableRefObject<number>;
   onSelect: (node: ForestNodeDTO | null) => void;
@@ -2283,7 +2304,7 @@ function CategoryLantern({
     const emphasis = selected ? 1.3 : hovered ? 1.14 : 1;
     if (bodyRef.current) {
       appear.current = THREE.MathUtils.damp(appear.current, emphasis, 6, delta);
-      bodyRef.current.scale.setScalar(1.15 * appear.current);
+      bodyRef.current.scale.setScalar(size * appear.current);
     }
     if (lightRef.current) {
       lightRef.current.intensity = (1.4 + night * 2.6 + (selected ? 1.5 : 0)) * flicker;
@@ -2323,18 +2344,23 @@ function CategoryLantern({
       }}
       onClick={select}
     >
-      {/* the cord + lantern hang and sway from the branch as one pendulum. The
-          cord's top sits up in the canopy so the lantern reads as hung straight
-          off the tree's own branches — no added limb. */}
+      {/* the cord + lantern hang and sway as one pendulum. The group's ORIGIN is
+          the attach point up inside the real canopy, so the cord drops straight
+          DOWN out of the foliage and the lantern emerges below the leaves —
+          reading as hung directly off the tree's own branches, no added limb. */}
       <group ref={swingRef}>
-        <mesh position={[0, 0.75, 0]}>
-          <cylinderGeometry args={[0.02, 0.02, 1.5, 6]} />
+        {/* cord: from the in-canopy origin down its full length `drop` */}
+        <mesh position={[0, -drop / 2, 0]}>
+          <cylinderGeometry
+            args={[Math.max(0.05, size * 0.03), Math.max(0.05, size * 0.03), drop, 6]}
+          />
           <meshStandardMaterial color="#2a1f12" roughness={1} />
         </mesh>
-        {/* lantern body — sized large so it reads as the tree's chapter marker */}
-        <group ref={bodyRef} position={[0, -1.4, 0]}>
+        {/* lantern body at the cord's end — scaled (via useFrame) to the tree */}
+        <group ref={bodyRef} position={[0, -drop, 0]}>
           <Clone object={scene} castShadow receiveShadow />
-          {/* warm core, tinted to the category's color */}
+          {/* warm core, tinted to the category's color (local units — scales
+              with the body) */}
           <mesh position={[0, 0.15, 0]}>
             <sphereGeometry args={[0.16, 14, 14]} />
             <meshStandardMaterial
@@ -2345,19 +2371,21 @@ function CategoryLantern({
               toneMapped={false}
             />
           </mesh>
-          <pointLight
-            ref={lightRef}
-            color={color}
-            intensity={1.4}
-            distance={9}
-            decay={2}
-            position={[0, 0.15, 0]}
-          />
         </group>
+        {/* the glow light lives OUTSIDE the scaled body so its radius stays in
+            world units regardless of lantern size */}
+        <pointLight
+          ref={lightRef}
+          color={color}
+          intensity={1.4}
+          distance={light}
+          decay={2}
+          position={[0, -drop, 0]}
+        />
       </group>
 
       {/* the category name floats beside the lantern as its label / entry point */}
-      <Html center distanceFactor={14} position={[0, -1.0, 0]} zIndexRange={[20, 0]}>
+      <Html center distanceFactor={Math.max(14, size * 1.2)} position={[0, -drop, 0]} zIndexRange={[20, 0]}>
         <div
           ref={labelRef}
           onClick={select}
