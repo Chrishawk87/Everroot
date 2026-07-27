@@ -69,6 +69,28 @@ function HeroTreeModel({
   // mutable material state, and so we can safely retarget uniforms per-instance.
   const root = useMemo(() => scene.clone(true), [scene]);
 
+  // Normalize the imported .glb into the scene's coordinate contract so the same
+  // `scale` prop (= trunk height H) plants ANY hero mesh correctly, whatever
+  // units/centering it shipped with. AI-lifted meshes (Tripo/Meshy) arrive
+  // centered on the origin at ~unit size; the generative tree this replaces has
+  // its BASE at y=0 and stands H tall. We measure the mesh once and derive a
+  // transform that recenters X/Z to 0, drops the base to y=0 (so it sits ON the
+  // plaza), and rescales so native height → 1 — then the outer `scale` (H) makes
+  // it exactly H tall, matching the fog, shadows, camera and layout.
+  const norm = useMemo(() => {
+    const box = new THREE.Box3().setFromObject(root);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    const height = size.y > 1e-6 ? size.y : 1;
+    return {
+      unit: 1 / height,
+      // Applied in the mesh's own units, on the inner group (before unit scale).
+      offset: [-center.x, -box.min.y, -center.z] as Vec3,
+    };
+  }, [root]);
+
   // Collect the 8 named category limbs and every material that carries a vein
   // emissive channel, once, on load. The Blender conform bakes the vein mask
   // into the emissive slot; here we simply gather the materials so useFrame can
@@ -131,13 +153,15 @@ function HeroTreeModel({
     });
   });
 
+  // Outer group = world placement (position/rotation, and `scale` = H). Inner
+  // group = the one-time normalization (unit-scale then recenter/base-drop),
+  // so callers only ever think in trunk heights.
   return (
-    <primitive
-      object={root}
-      position={position}
-      rotation={rotation}
-      scale={scale}
-    />
+    <group position={position} rotation={rotation} scale={scale}>
+      <group scale={norm.unit}>
+        <primitive object={root} position={norm.offset} />
+      </group>
+    </group>
   );
 }
 

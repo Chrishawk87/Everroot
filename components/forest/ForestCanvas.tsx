@@ -22,6 +22,18 @@ import {
   type LanternPlacement,
 } from "@/components/forest/assets";
 import { LegacyPlaza, StonePath, Stream, WoodenBridge, Fireflies } from "@/components/forest/assets/Composition";
+import { HeroTree } from "@/components/forest/HeroTree";
+
+// The central tree is now the ONE authored/imported hero mesh
+// (public/assets/models/hero/hero_tree.glb), per the EverRoot Studios pipeline:
+// the tree ORIGINATES as an asset and the app only modifies it. When true, the
+// generative woody structure (Trunk / LivingTrunk / Branches / decorative
+// Canopy / trunk Scars) is retired and replaced by <HeroTree>. The interactive
+// memory nodes, threads, god-rays and canopy sparkles stay — they're positioned
+// from the layout math, not the retired geometry, so they still read as living
+// memories in the crown. Flip to false to fall back to the generative tree if
+// the .glb ever needs to be swapped out.
+const USE_HERO_TREE = true;
 
 const COLORS: Record<string, string> = {
   SEED: "#c9a86a",
@@ -866,35 +878,47 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
       <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} nightRef={nightRef} />
 
-      {/* Woody structure: a thick base to the fork height, then the two great
-          forks and every branch continue as tapered tubes. */}
-      <Trunk
-        height={layout.forkHeight}
-        rBottom={layout.trunkRadiusBottom}
-        rTop={layout.trunkRadiusTop}
-        bark={barkTex}
-      />
-      {layout.forkHeight > 0 ? (
-        <LivingTrunk
-          forkHeight={layout.forkHeight}
-          forks={layout.forks}
-          baseRadius={layout.trunkRadiusBottom}
-          topRadius={layout.trunkRadiusTop}
-          nightRef={nightRef}
-        />
-      ) : null}
-      {layout.limbs
-        .filter((l) => l.kind !== "twig")
-        .map((limb, i) => (
-          <Branch key={i} limb={limb} girthScale={layout.girthScale} bark={barkTex} />
-        ))}
+      {/* THE HERO TREE — the one authored/imported central tree. Planted at the
+          origin, scaled to the master trunk height H so it drives the whole
+          composition exactly as the generative tree did. veinGlow=0 leaves it
+          lit naturally by the scene; drive it 0..1 (e.g. from the opening
+          camera's beat-4 ignition) to surge the memory-veins. */}
+      {USE_HERO_TREE ? (
+        <HeroTree scale={H} veinGlow={0} />
+      ) : (
+        <>
+          {/* Woody structure: a thick base to the fork height, then the two great
+              forks and every branch continue as tapered tubes. */}
+          <Trunk
+            height={layout.forkHeight}
+            rBottom={layout.trunkRadiusBottom}
+            rTop={layout.trunkRadiusTop}
+            bark={barkTex}
+          />
+          {layout.forkHeight > 0 ? (
+            <LivingTrunk
+              forkHeight={layout.forkHeight}
+              forks={layout.forks}
+              baseRadius={layout.trunkRadiusBottom}
+              topRadius={layout.trunkRadiusTop}
+              nightRef={nightRef}
+            />
+          ) : null}
+          {layout.limbs
+            .filter((l) => l.kind !== "twig")
+            .map((limb, i) => (
+              <Branch key={i} limb={limb} girthScale={layout.girthScale} bark={barkTex} />
+            ))}
 
-      {/* Healed scars climb the trunk — one per hardship the life carried
-          through, each glowing faintly gold: wounds that became wisdom. */}
-      <Scars scars={layout.scars} nightRef={nightRef} />
+          {/* Healed scars climb the trunk — one per hardship the life carried
+              through, each glowing faintly gold: wounds that became wisdom. */}
+          <Scars scars={layout.scars} nightRef={nightRef} />
+        </>
+      )}
 
-      {/* Decorative full canopy. */}
-      {crown.count > 0 ? (
+      {/* Decorative full canopy — only for the generative tree. The hero mesh
+          ships its own foliage, so we skip the leaf-card cloud when it's on. */}
+      {!USE_HERO_TREE && crown.count > 0 ? (
         <Canopy center={crownCenter} radius={crown.r} count={crown.count} leafTex={leafTex} anchors={leafAnchors} />
       ) : null}
 
