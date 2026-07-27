@@ -186,6 +186,56 @@ export function Stream({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Moat — a ring of water encircling the hero-tree island, so the tree reads as a
+// sacred island reached by the footbridge. Same rippling-water look as the
+// Stream, laid out as an annulus (inner = island edge, outer = far bank). A dark
+// sunken bed sits just under it so the water reads as deep, and a thin grassy
+// verge is left to the surrounding garden.
+// ---------------------------------------------------------------------------
+export function Moat({
+  innerRadius,
+  outerRadius,
+  y = 0.05,
+}: {
+  innerRadius: number;
+  outerRadius: number;
+  /** Water surface height. Kept just above grade so it doesn't z-fight ground. */
+  y?: number;
+}) {
+  const normal = useMemo(makeStreamNormal, []);
+  // Drift the ripples slowly around the ring so the water is alive but calm.
+  useFrame((_, delta) => {
+    normal.offset.x = (normal.offset.x - delta * 0.05) % 1;
+    normal.offset.y = (normal.offset.y + delta * 0.02) % 1;
+  });
+  return (
+    <group>
+      {/* Sunken dark bed, a touch wider than the water so no ground shows at the
+          banks. Slightly below the water plane to give the moat visible depth. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y - 0.06, 0]} receiveShadow>
+        <ringGeometry args={[innerRadius - 0.4, outerRadius + 0.4, 128]} />
+        <meshStandardMaterial color="#241d12" roughness={1} metalness={0} side={THREE.DoubleSide} />
+      </mesh>
+      {/* The water ring itself. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y, 0]}>
+        <ringGeometry args={[innerRadius, outerRadius, 160]} />
+        <meshStandardMaterial
+          color="#33606a"
+          normalMap={normal}
+          normalScale={new THREE.Vector2(0.4, 0.4)}
+          roughness={0.08}
+          metalness={0.55}
+          transparent
+          opacity={0.92}
+          envMapIntensity={1.4}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
+
 // A small arched wooden footbridge: a slightly cambered deck of planks with two
 // hand-rails on posts. Placed where the path meets the stream.
 export function WoodenBridge({

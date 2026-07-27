@@ -20,7 +20,7 @@ import {
   type ScatterItem,
   type LanternPlacement,
 } from "@/components/forest/assets";
-import { LegacyPlaza, StonePath, Stream, WoodenBridge, Fireflies } from "@/components/forest/assets/Composition";
+import { LegacyPlaza, StonePath, Stream, WoodenBridge, Moat, Fireflies } from "@/components/forest/assets/Composition";
 import { HeroTree } from "@/components/forest/HeroTree";
 import { HeroBase } from "@/components/forest/HeroBase";
 
@@ -537,6 +537,17 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   const H = layout.trunkHeight;
   const atmo = memorial ? MEMORIAL_ATMOSPHERE : DAY_ATMOSPHERE;
 
+  // --- Hero-tree island + moat geometry -----------------------------------
+  // The hero tree sits on a raised island (the authored base disc) ringed by a
+  // water moat, reached by the footbridge. All sizes derive from the trunk
+  // height H so the composition scales with the tree. `islandR` is the land the
+  // roots rest on; the moat is the ring from the island edge out to `moatOuter`.
+  const islandR = Math.max(6, H * 0.6);
+  const moatWidth = Math.max(5, H * 0.24);
+  const moatOuter = islandR + moatWidth;
+  const bridgeZ = islandR + moatWidth / 2; // bridge sits mid-span over the moat
+  const bridgeSpan = moatWidth + 3; // overlap both banks so it lands on solid ground
+
   const bark = useMemo(makeBarkTexture, []);
   const leafTex = useMemo(makeLeafTexture, []);
   const grass = useMemo(makeGrassTexture, []);
@@ -851,19 +862,33 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       <Ground />
 
       {/* --- The monument's architecture, composed AROUND the trunk --- */}
-      {/* A circular Legacy Plaza of natural stone the trunk rises out of, with
-          the roots left to break through its floor. Sized from the tree so it
-          always reads as the monument's court. */}
-      <AssetBoundary label="legacy plaza">
-        <LegacyPlaza radius={Math.max(3.2, H * 0.28)} />
-      </AssetBoundary>
+      {/* GENERATIVE tree: a circular stone Legacy Plaza the trunk rises out of,
+          a straight crossing stream, and a footbridge over it.
+          HERO tree: the flat stone court reads as dead grey ground, so instead
+          the island is ringed by a WATER MOAT (below) and the plaza is dropped. */}
+      {!USE_HERO_TREE ? (
+        <>
+          <AssetBoundary label="legacy plaza">
+            <LegacyPlaza radius={Math.max(3.2, H * 0.28)} />
+          </AssetBoundary>
+          <Stream center={[0, 0.05, H * 0.85]} length={Math.max(14, H * 1.8)} width={2.2} angle={0} />
+          <WoodenBridge position={[0, 0, H * 0.85]} rotationY={Math.PI / 2} span={4.2} width={1.8} />
+        </>
+      ) : (
+        <>
+          {/* The moat: a ring of water encircling the island so the tree reads
+              as a sacred island. Runs from the island edge out to moatOuter. */}
+          <AssetBoundary label="moat">
+            <Moat innerRadius={islandR} outerRadius={moatOuter} y={0.06} />
+          </AssetBoundary>
+          {/* One footbridge spanning the moat from the outer bank to the island,
+              on the +Z (camera-facing) side where the path arrives. */}
+          <WoodenBridge position={[0, 0, bridgeZ]} rotationY={Math.PI / 2} span={bridgeSpan} width={2.2} />
+        </>
+      )}
       {/* A winding stone path approaches from the treeline and draws the eye in
-          toward the trunk. */}
-      <StonePath start={[0, H * 1.5]} plazaRadius={Math.max(3.2, H * 0.28)} />
-      {/* A shallow stream crosses the approach, with a small wooden footbridge
-          where the path steps over it. */}
-      <Stream center={[0, 0.05, H * 0.85]} length={Math.max(14, H * 1.8)} width={2.2} angle={0} />
-      <WoodenBridge position={[0, 0, H * 0.85]} rotationY={Math.PI / 2} span={4.2} width={1.8} />
+          toward the trunk / the moat's outer bank. */}
+      <StonePath start={[0, H * 1.5]} plazaRadius={USE_HERO_TREE ? moatOuter : Math.max(3.2, H * 0.28)} />
       {/* Fireflies wake at dusk and drift low over the garden around the base. */}
       <Fireflies count={48} radius={Math.min(H * 0.75, 14)} nightRef={nightRef} />
 
@@ -883,9 +908,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           ground (never half-buried), and sizes it by `radius`. The trunk rises
           from its centre. `radius` is the one knob to retune the platform's
           spread — set wide enough to read as a plate AROUND the tree's root
-          flare (otherwise the roots hang over it and hide it). A hair of lift
-          on Y keeps its underside from z-fighting the ground plane. */}
-      {USE_HERO_TREE ? <HeroBase radius={H * 0.55} position={[0, H * 0.01, 0]} /> : null}
+          flare (otherwise the roots hang over it and hide it). Sized to islandR
+          so it reads as the LAND inside the moat ring. A hair of lift on Y keeps
+          its underside from z-fighting the ground plane. */}
+      {USE_HERO_TREE ? <HeroBase radius={islandR} position={[0, H * 0.01, 0]} /> : null}
 
       {/* THE HERO TREE — the one authored/imported central tree. Planted at the
           origin, scaled to the master trunk height H so it drives the whole
