@@ -123,6 +123,10 @@ export const MODELS: Record<string, ModelAsset> = {
   // limb extension/tilt, scars, vein glow) from the memory graph. Renders
   // nothing until the .glb is installed (see components/forest/HeroTree.tsx).
   hero_tree: { id: "hero_tree", url: "/assets/models/hero/hero_tree.glb" },
+  // The hero BASE — an authored platform/island the hero tree sits in the
+  // middle of. Centered on the origin; mounted at the tree's foot so the trunk
+  // rises out of its centre. Renders nothing until the .glb is installed.
+  hero_base: { id: "hero_base", url: "/assets/models/hero/hero_base.glb" },
   // Background forest — a small library so the community reads as varied.
   tree_a: { id: "tree_a", url: "/assets/models/trees/tree_a.glb" },
   tree_b: { id: "tree_b", url: "/assets/models/trees/tree_b.glb" },

@@ -13,8 +13,8 @@ import {
   HdriEnvironment,
   Terrain,
   Water,
+  Model,
   Scatter,
-  Waterfall,
   Lanterns,
   Birds,
   Butterflies,
@@ -833,10 +833,6 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
       <AssetBoundary label="lake">
         <Water />
       </AssetBoundary>
-      {/* Waterfall feeds the lake — a shader cascade (the accepted exception to
-          the loaded-asset rule, since falling water reads as motion). */}
-      <Waterfall top={[-24, 7.5, 12]} height={7.4} width={2.8} />
-
       {/* Memory lanterns hang from the boughs — one per memory — lit from within
           and blooming warmer after dark. */}
       <AssetBoundary label="lanterns">
@@ -875,8 +871,22 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           generation of family/heritage — so the roots read as part of a whole
           lineage. */}
       <GenRings rings={layout.genRings} nightRef={nightRef} />
-      {crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
+      {/* The canopy ground-shadow disc is sized/placed to the GENERATIVE crown.
+          With the hero mesh it no longer matches the real footprint (it read as
+          a stray circle at the tree), so it's only drawn for the generative tree. */}
+      {!USE_HERO_TREE && crown.r > 0 ? <CanopyShadow tex={shadowTex} center={crownCenter} radius={crown.r} /> : null}
       <Motes trunkHeight={layout.trunkHeight} color={atmo.motes.color} opacity={atmo.motes.opacity} nightRef={nightRef} />
+
+      {/* THE HERO BASE — the authored platform/island the tree sits in the
+          middle of. Centered on the origin at the trunk's foot. baseScale sizes
+          it (the source mesh is ~2 units across); baseLift nudges it up/down so
+          the trunk emerges cleanly from its centre. Both are easy knobs to
+          retune once it's seen live. */}
+      {USE_HERO_TREE ? (
+        <AssetBoundary label="hero_base">
+          <Model url={MODELS.hero_base.url} scale={H * 0.32} position={[0, 0, 0]} />
+        </AssetBoundary>
+      ) : null}
 
       {/* THE HERO TREE — the one authored/imported central tree. Planted at the
           origin, scaled to the master trunk height H so it drives the whole
@@ -927,8 +937,11 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         <GodRays center={crownCenter} height={H} sun={atmo.sun} nightRef={nightRef} />
       ) : null}
 
-      {/* Golden twinkling memory-lights scattered through the crown. */}
-      {crown.r > 0 ? (
+      {/* Golden twinkling memory-lights scattered through the crown. Distributed
+          as a SPHERE around the generative crown centre; against the hero mesh
+          that sphere read as a glowing orb floating mid-tree, so it's gated to
+          the generative tree until it can be re-anchored to the real canopy. */}
+      {!USE_HERO_TREE && crown.r > 0 ? (
         <CanopySparkles
           center={crownCenter}
           radius={crown.r}
