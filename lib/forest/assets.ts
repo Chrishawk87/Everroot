@@ -69,19 +69,19 @@ export const HDRI: Record<string, HdriAsset> = {
 // the leaf cards, and the water.
 // ---------------------------------------------------------------------------
 export const MATERIALS: Record<string, MaterialAsset> = {
-  // Only the albedo (base color) map is installed today. The old entries for
-  // normal/roughness/ao/height pointed at files that were never delivered, and
-  // because `useTexture` throws on any 404 that omitted the ENTIRE ground plane
-  // — which is why the world read as a dark void. The manifest now lists only
-  // what is on disk; extra relief comes from a roughness scalar. Drop a
-  // normal.jpg etc. back in here the moment it's installed and it lights up.
+  // The meadow floor around the moat. Chris's authored ground texture (Tripo →
+  // 4096² Color/ORM/NormalGL, downscaled to 2048²): a green mossy forest floor
+  // with albedo + normal + roughness (the roughness is the ORM green channel).
+  // Repeat kept modest so the moss reads at scale instead of tiling to noise.
   forest_floor: {
     id: "forest_floor",
     maps: {
-      map: "/assets/materials/forest_floor/albedo.jpg",
+      map: "/assets/materials/custom_ground/albedo.jpg",
+      normalMap: "/assets/materials/custom_ground/normal.jpg",
+      roughnessMap: "/assets/materials/custom_ground/roughness.jpg",
     },
-    repeat: [22, 22],
-    roughness: 0.95,
+    repeat: [10, 10],
+    roughness: 1,
     metalness: 0,
   },
   bark: {

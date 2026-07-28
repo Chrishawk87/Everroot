@@ -51,6 +51,9 @@ export interface HeroTreeProps {
   /** Memory-vein emissive intensity, 0..1. Drive from the opening-camera
    *  ignition (see lib/forest/heroCamera.ts → veinIgnition01). Default 0. */
   veinGlow?: number;
+  /** Steady multiplier on the tree's AUTHORED emissive baseline — how brightly
+   *  the veins glow at rest, before any ignition. 1 = exactly as authored. */
+  veinBoost?: number;
   /** Glow color the vein mask is multiplied by. Warm gold by default. */
   veinColor?: THREE.ColorRepresentation;
   /** Receives the outer world-space group once mounted, so callers can raycast
@@ -64,6 +67,7 @@ function HeroTreeModel({
   rotation,
   scale = 1,
   veinGlow = 0,
+  veinBoost = 1,
   veinColor = "#ffcf7a",
   objectRef,
 }: HeroTreeProps) {
@@ -166,7 +170,7 @@ function HeroTreeModel({
   useFrame(() => {
     const g = THREE.MathUtils.clamp(veinGlow, 0, 1);
     veinMaterials.forEach(({ mat, baseIntensity, baseColor }) => {
-      const targetIntensity = baseIntensity + g * 1.5;
+      const targetIntensity = baseIntensity * veinBoost + g * 1.5;
       mat.emissiveIntensity = THREE.MathUtils.lerp(
         mat.emissiveIntensity ?? baseIntensity,
         targetIntensity,

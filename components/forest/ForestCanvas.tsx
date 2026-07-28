@@ -1041,7 +1041,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           lit naturally by the scene; drive it 0..1 (e.g. from the opening
           camera's beat-4 ignition) to surge the memory-veins. */}
       {USE_HERO_TREE ? (
-        <HeroTree scale={H} veinGlow={0} objectRef={heroRef} />
+        <HeroTree scale={H} veinGlow={0} veinBoost={1.7} objectRef={heroRef} />
       ) : (
         <>
           {/* Woody structure: a thick base to the fork height, then the two great
@@ -2471,11 +2471,11 @@ function CategoryLantern({
       bodyRef.current.scale.setScalar(size * appear.current);
     }
     if (lightRef.current) {
-      lightRef.current.intensity = (1.4 + night * 2.6 + (selected ? 1.5 : 0)) * flicker;
+      lightRef.current.intensity = (2.2 + night * 3.4 + (selected ? 1.8 : 0)) * flicker;
     }
     if (coreRef.current) {
       // A candle flame — gentle, warm, flickering; brighter after dark.
-      coreRef.current.emissiveIntensity = (1.1 + night * 1.6 + (selected ? 0.7 : 0)) * flicker;
+      coreRef.current.emissiveIntensity = (1.7 + night * 2.2 + (selected ? 0.9 : 0)) * flicker;
     }
     // Fade the label out on the far side of the tree so only the lanterns facing
     // the camera show their name — the front always reads cleanly.
