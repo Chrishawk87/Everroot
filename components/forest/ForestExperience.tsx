@@ -61,12 +61,12 @@ export default function ForestExperience({
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<ForestNodeDTO | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showIntro, setShowIntro] = useState(false);
   const [greeting, setGreeting] = useState("Welcome back");
-  const [toolsOpen, setToolsOpen] = useState(false);
+  // Facebook-style: one active bottom sheet at a time.
+  const [sheet, setSheet] = useState<null | "create" | "memories" | "more" | "tree">(null);
 
   // Time-of-day greeting, resolved after mount to avoid a hydration mismatch.
   useEffect(() => {
@@ -157,20 +157,22 @@ export default function ForestExperience({
   const firstName = graph.profile.displayName.split(/\s+/)[0];
   const role = graph.profile.familyPosition || "Legacy Keeper";
 
-  const navItems: { label: string; href?: string; active?: boolean; icon: ReactNode }[] = [
-    { label: "My Forest", href: "/forest", active: true, icon: ICONS.tree },
-    { label: "Timeline", icon: ICONS.timeline },
-    { label: "People", href: "/family", icon: ICONS.people },
-    { label: "Places", icon: ICONS.pin },
-    { label: "Search", icon: ICONS.search },
-    { label: "Daily Prompt", href: "/interview", icon: ICONS.mic },
-    { label: "Time Capsules", href: "/interview", icon: ICONS.capsule },
-    { label: "Settings", icon: ICONS.settings },
-  ];
+  // Legacy Strength as a percentage of a fully-grown legacy (for the ring gauge).
+  const finalMin = GROWTH_STAGES[GROWTH_STAGES.length - 1]?.minScore || 100;
+  const legacyPct = Math.max(4, Math.min(100, Math.round((graph.legacyScore / finalMin) * 100)));
+
+  // Browsable categories = the branch nodes hanging off the trunk.
+  const branches = graph.nodes.filter((n) => n.kind === "BRANCH" || n.kind === "SUB_BRANCH");
+
+  // Open a branch's category drawer (from the "My Tree" sheet).
+  const openBranch = useCallback((node: ForestNodeDTO) => {
+    setSheet(null);
+    setSelected(node);
+  }, []);
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden font-sans">
-      {/* Hero 3D forest — full-bleed behind the dashboard chrome. */}
+    <div className="relative h-[100dvh] w-screen overflow-hidden font-sans">
+      {/* Hero 3D forest — full-bleed behind the mobile chrome. */}
       <div className="absolute inset-0">
         <ForestCanvas
           graph={graph}
@@ -182,115 +184,54 @@ export default function ForestExperience({
         />
       </div>
 
-      {/* Soft scrims keep the floating panels legible over a bright canopy. */}
-      <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-72 bg-gradient-to-r from-black/50 to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-96 bg-gradient-to-l from-black/40 to-transparent" />
+      {/* Soft scrims keep top bar + bottom card legible over a bright canopy. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-40 bg-gradient-to-b from-black/65 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-72 bg-gradient-to-t from-black/75 via-black/40 to-transparent" />
+
+      {/* ---------------- TOP BAR ---------------- */}
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-30 pt-safe">
+        <div className="pointer-events-auto mx-auto flex w-full max-w-md items-center justify-between gap-3 px-4 py-3">
+          <Link href="/forest" className="flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/everroot-logo-transparent.png" alt="EverRoot" className="h-9 w-auto" />
+            <span className="font-serif text-lg leading-none text-parchment [text-shadow:0_1px_6px_rgba(0,0,0,0.8)]">
+              EverRoot
+            </span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <IconButton label="Search" onClick={() => setSheet("tree")}>
+              {ICONS.search}
+            </IconButton>
+            <IconButton label="Notifications" onClick={() => setToast("You're all caught up.")}>
+              {ICONS.bell}
+              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-canopy-light" />
+            </IconButton>
+            <button
+              onClick={() => setSheet("more")}
+              aria-label="Menu"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-parchment/25 bg-canopy/40 font-serif text-sm text-parchment shadow-lg backdrop-blur transition active:scale-95"
+            >
+              {initials}
+            </button>
+          </div>
+        </div>
+      </header>
 
       {/* Memorial banner. */}
       {graph.isMemorial ? (
-        <div className="pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 text-center font-serif [text-shadow:0_1px_8px_rgba(0,0,0,0.9)]">
+        <div className="pointer-events-none absolute left-1/2 top-[4.5rem] z-20 w-full max-w-md -translate-x-1/2 px-6 text-center font-serif [text-shadow:0_1px_8px_rgba(0,0,0,0.9)]">
           <p className="text-xs uppercase tracking-[0.3em] text-parchment/60">In loving memory</p>
           <p className="text-lg text-parchment/90">{graph.profile.displayName}</p>
           {graph.memorialNote ? (
-            <p className="mt-1 max-w-md text-sm italic text-parchment/60">{graph.memorialNote}</p>
+            <p className="mt-1 text-sm italic text-parchment/60">{graph.memorialNote}</p>
           ) : null}
         </div>
       ) : null}
 
-      {/* ---------------- LEFT SIDEBAR ---------------- */}
-      <aside className="pointer-events-auto absolute left-0 top-0 z-20 flex h-full w-60 flex-col border-r border-parchment/10 bg-black/55 backdrop-blur-md">
-        <div className="px-5 pt-5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/everroot-logo-transparent.png" alt="EverRoot" className="h-11 w-auto" />
-          <p className="mt-1 text-[11px] tracking-wide text-parchment/45">Grow Your Legacy. Share Forever.</p>
-        </div>
-
-        <nav className="mt-5 flex-1 space-y-0.5 overflow-y-auto px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {navItems.map((item) => (
-            <NavItem key={item.label} {...item} />
-          ))}
-        </nav>
-
-        {/* Today's Prompt. */}
-        <div className="mx-3 mb-3 rounded-xl border border-canopy-light/25 bg-canopy/15 p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-canopy-light">
-            {ICONS.leaf} Today&apos;s Prompt
-          </p>
-          <p className="mt-1.5 text-sm leading-snug text-parchment/85">
-            What is a lesson life taught you the hard way?
-          </p>
-          <Link
-            href="/interview"
-            className="mt-3 flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-canopy to-canopy-light py-2 text-sm font-medium text-white shadow transition hover:brightness-110"
-          >
-            {ICONS.mic} Record Memory
-          </Link>
-        </div>
-
-        {/* Profile + sign out. */}
-        <div className="flex items-center gap-3 border-t border-parchment/10 px-4 py-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-canopy/40 font-serif text-sm text-parchment">
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm text-parchment">{graph.profile.displayName}</p>
-            <p className="truncate text-[11px] text-parchment/45">{role}</p>
-          </div>
-          <form action={signOutAction}>
-            <button title="Sign out" className="text-parchment/40 transition hover:text-parchment/80">
-              {ICONS.signout}
-            </button>
-          </form>
-        </div>
-      </aside>
-
-      {/* ---------------- TOP-RIGHT: greeting + stats ---------------- */}
-      <div className="pointer-events-auto absolute right-5 top-5 z-20 w-80 max-w-[calc(100vw-16rem)]">
-        <div className="rounded-2xl border border-parchment/12 bg-black/55 p-4 backdrop-blur-md">
-          <div className="flex items-start gap-2">
-            <span className="mt-0.5 text-fruit">{ICONS.sun}</span>
-            <div className="min-w-0 flex-1">
-              <p className="font-serif text-lg leading-tight text-parchment">
-                {greeting}, {firstName}
-              </p>
-              <p className="text-xs text-parchment/55">Your forest is growing beautifully.</p>
-            </div>
-          </div>
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {stats.map((s) => (
-              <div key={s.label} className="rounded-lg bg-white/[0.06] px-1 py-2 text-center">
-                <p className="font-serif text-lg leading-none text-parchment">{s.value}</p>
-                <p className="mt-1 text-[10px] uppercase tracking-wide text-parchment/50">{s.label}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-xs">
-            <span className="text-fruit">{stageMeta?.label ?? graph.stage}</span>
-            <span className="text-parchment/30">·</span>
-            <span className="text-parchment/70">Legacy {graph.legacyScore}</span>
-            <button
-              onClick={() => setShowIntro(true)}
-              className="ml-auto text-parchment/40 transition hover:text-parchment/80"
-            >
-              ▶ Replay
-            </button>
-          </div>
-          {next ? (
-            <p className="mt-1.5 text-[11px] text-parchment/45">
-              {next.min - graph.legacyScore > 0
-                ? `${next.min - graph.legacyScore} more to reach ${next.label}`
-                : `Ready to become ${next.label}`}
-            </p>
-          ) : (
-            <p className="mt-1.5 text-[11px] text-parchment/45">Fully grown — an ancient legacy</p>
-          )}
-        </div>
-      </div>
-
       {/* Growth toast — announces what just grew. */}
       {toast ? (
-        <div className="pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 animate-[fadeIn_0.4s_ease-out]">
-          <div className="flex items-center gap-2 rounded-full border border-fruit/40 bg-black/80 px-5 py-2 text-sm text-parchment shadow-lg backdrop-blur">
+        <div className="pointer-events-none absolute left-1/2 top-20 z-40 -translate-x-1/2 animate-[fadeIn_0.4s_ease-out]">
+          <div className="flex items-center gap-2 rounded-full border border-fruit/40 bg-black/85 px-5 py-2 text-sm text-parchment shadow-lg backdrop-blur">
             <span className="text-fruit">✦</span>
             <span>{toast}</span>
           </div>
@@ -306,51 +247,166 @@ export default function ForestExperience({
         />
       ) : null}
 
-      {/* Selected node detail. */}
+      {/* Selected node detail — bottom sheet card on mobile. */}
       {selected && selected.kind !== "BRANCH" && selected.kind !== "SUB_BRANCH" ? (
-        <div className="absolute bottom-5 left-64 z-20 max-w-sm rounded-2xl border border-parchment/15 bg-black/70 p-5 backdrop-blur">
-          <p className="text-xs uppercase tracking-widest text-canopy-light">
-            {selected.kind.replace(/_/g, " ")}
-          </p>
-          <h2 className="mt-1 font-serif text-xl text-parchment">{selected.title}</h2>
-          {selected.summary ? (
-            <p className="mt-2 text-sm text-parchment/75">{selected.summary}</p>
-          ) : null}
-          {selected.epoch ? (
-            <p className="mt-2 text-xs text-parchment/50">Epoch · {selected.epoch.replace(/_/g, " ")}</p>
-          ) : null}
-          {selected.kind === "PERSON" ? <InviteButton person={selected} /> : null}
-          {isClipKind(selected.kind) ? <ShareClipButton node={selected} /> : null}
-          <button
-            onClick={() => setSelected(null)}
-            className="mt-3 text-xs text-parchment/50 hover:text-parchment"
-          >
-            Close
-          </button>
+        <div className="absolute inset-x-0 bottom-0 z-40">
+          <div className="absolute inset-0 -top-[100vh]" onClick={() => setSelected(null)} />
+          <div className="relative mx-auto w-full max-w-md animate-[sheetUp_0.28s_ease-out] rounded-t-3xl border-t border-parchment/15 bg-[#0b1710]/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl">
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-parchment/25" />
+            <p className="text-xs uppercase tracking-widest text-canopy-light">
+              {selected.kind.replace(/_/g, " ")}
+            </p>
+            <h2 className="mt-1 font-serif text-xl text-parchment">{selected.title}</h2>
+            {selected.summary ? (
+              <p className="mt-2 text-sm text-parchment/75">{selected.summary}</p>
+            ) : null}
+            {selected.epoch ? (
+              <p className="mt-2 text-xs text-parchment/50">Epoch · {selected.epoch.replace(/_/g, " ")}</p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {selected.kind === "PERSON" ? <InviteButton person={selected} /> : null}
+              {isClipKind(selected.kind) ? <ShareClipButton node={selected} /> : null}
+            </div>
+            <button
+              onClick={() => setSelected(null)}
+              className="mt-4 w-full rounded-xl border border-parchment/20 py-2.5 text-sm text-parchment/70 transition active:scale-[0.98]"
+            >
+              Close
+            </button>
+          </div>
         </div>
       ) : null}
 
-      {/* Cinematic opening — plays over everything. */}
-      {showIntro ? (
-        <ForestIntro displayName={graph.profile.displayName} onComplete={completeIntro} />
+      {/* ---------------- FLOATING STATS CARD ---------------- */}
+      {!selected ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 px-4">
+          <div className="pointer-events-auto mx-auto w-full max-w-md rounded-2xl border border-parchment/12 bg-black/55 p-4 backdrop-blur-md">
+            <div className="flex items-center gap-4">
+              <LegacyRing pct={legacyPct} />
+              <div className="min-w-0 flex-1">
+                <p className="font-serif text-lg leading-tight text-parchment">
+                  {greeting}, {firstName} 🌱
+                </p>
+                <p className="mt-0.5 text-xs italic leading-snug text-parchment/55">
+                  The roots of today build the branches of tomorrow.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowIntro(true)}
+                aria-label="Replay intro"
+                className="shrink-0 text-parchment/40 transition active:scale-90 hover:text-parchment/80"
+              >
+                {ICONS.play}
+              </button>
+            </div>
+            <div className="mt-3 grid grid-cols-4 divide-x divide-parchment/10">
+              {stats.map((s) => (
+                <div key={s.label} className="px-1 text-center">
+                  <p className="font-serif text-lg leading-none text-parchment">{s.value}</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-wide text-parchment/50">{s.label}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2.5 text-center text-[11px] text-parchment/45">
+              <span className="text-fruit">{stageMeta?.label ?? graph.stage}</span>
+              {next
+                ? next.min - graph.legacyScore > 0
+                  ? ` · ${next.min - graph.legacyScore} more to reach ${next.label}`
+                  : ` · Ready to become ${next.label}`
+                : " · Fully grown — an ancient legacy"}
+            </p>
+          </div>
+        </div>
       ) : null}
 
-      {/* ---------------- BOTTOM-RIGHT: tools ---------------- */}
-      <div className="absolute bottom-5 right-5 z-20 flex flex-col items-end gap-3">
-        {toolsOpen ? (
-          <div className="max-h-[70vh] w-80 max-w-[90vw] overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
-              <Link
-                href={`/book/${ownerId}`}
-                className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/50 px-4 py-1.5 text-sm text-parchment/85 transition hover:border-parchment/60 hover:text-parchment"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                </svg>
-                Book of the Tree
-              </Link>
+      {/* ---------------- BOTTOM TAB BAR (Facebook-style) ---------------- */}
+      <nav className="absolute inset-x-0 bottom-0 z-30 pb-safe">
+        <div className="mx-auto flex w-full max-w-md items-end justify-around border-t border-parchment/10 bg-black/70 px-2 pb-2 pt-1.5 backdrop-blur-xl">
+          <Tab label="Forest" active icon={ICONS.tree} onClick={() => setSheet(null)} />
+          <Tab label="My Tree" icon={ICONS.branches} onClick={() => setSheet("tree")} />
+          <CenterTab onClick={() => setSheet("create")} />
+          <Tab label="Memories" icon={ICONS.photo} onClick={() => setSheet("memories")} />
+          <Tab label="More" icon={ICONS.dots} onClick={() => setSheet("more")} />
+        </div>
+      </nav>
+
+      {/* ---------------- BOTTOM SHEETS ---------------- */}
+      {sheet === "create" ? (
+        <BottomSheet title="Grow your forest" onClose={() => setSheet(null)}>
+          <Link
+            href="/interview"
+            className="mb-4 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-canopy to-canopy-light py-3 text-sm font-medium text-white shadow transition active:scale-[0.98]"
+          >
+            {ICONS.mic} Record a memory
+          </Link>
+          <div className="rounded-2xl border border-parchment/12 bg-black/30 p-4">
+            <GrowthPanel onGrew={handleGrew} />
+          </div>
+        </BottomSheet>
+      ) : null}
+
+      {sheet === "memories" ? (
+        <BottomSheet title="Memories" onClose={() => setSheet(null)}>
+          <div className="flex flex-wrap items-center gap-2">
+            <StoryFeedPlayer ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
+            <Link
+              href={`/book/${ownerId}`}
+              className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/50 px-4 py-2 text-sm text-parchment/85 transition active:scale-95"
+            >
+              {ICONS.book}
+              Book of the Tree
+            </Link>
+          </div>
+          <p className="mt-4 text-xs text-parchment/45">
+            Tap any glowing leaf, lantern, or family light on your tree to open that memory.
+          </p>
+        </BottomSheet>
+      ) : null}
+
+      {sheet === "tree" ? (
+        <BottomSheet title="My Tree" onClose={() => setSheet(null)}>
+          {branches.length ? (
+            <div className="grid grid-cols-2 gap-2">
+              {branches.map((b) => (
+                <button
+                  key={b.id}
+                  onClick={() => openBranch(b)}
+                  className="flex items-center gap-2 rounded-xl border border-parchment/12 bg-black/30 px-3 py-3 text-left transition active:scale-[0.98]"
+                >
+                  <span className="text-canopy-light">{ICONS.leaf}</span>
+                  <span className="truncate text-sm text-parchment/90">{b.title}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-parchment/60">
+              Your tree is just getting started. Tap the ＋ button to grow your first branch.
+            </p>
+          )}
+          <Link
+            href="/family"
+            className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-parchment/20 py-3 text-sm text-parchment/85 transition active:scale-[0.98]"
+          >
+            {ICONS.people} Visit the family forest
+          </Link>
+        </BottomSheet>
+      ) : null}
+
+      {sheet === "more" ? (
+        <BottomSheet title="More" onClose={() => setSheet(null)}>
+          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-parchment/10 bg-black/30 px-4 py-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-canopy/40 font-serif text-parchment">
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm text-parchment">{graph.profile.displayName}</p>
+              <p className="truncate text-[11px] text-parchment/45">{role}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <SheetLink href="/family" icon={ICONS.people}>Family forest</SheetLink>
+            <SheetLink href={`/book/${ownerId}`} icon={ICONS.book}>Book of the Tree</SheetLink>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-parchment/12 bg-black/30 px-3 py-3">
               <CapsulePanel ownerId={ownerId} ownerName={graph.profile.displayName} isSelf />
               <GuardianPanel
                 ownerId={ownerId}
@@ -360,69 +416,181 @@ export default function ForestExperience({
                 family={familyOptions}
               />
             </div>
-            <div className="rounded-2xl border border-parchment/15 bg-black/70 backdrop-blur">
-              <button
-                onClick={() => setPanelOpen((o) => !o)}
-                className="flex w-full items-center justify-between px-5 py-3 text-left"
-              >
-                <span className="font-serif text-lg text-parchment">Grow your forest</span>
-                <span className="text-parchment/50">{panelOpen ? "–" : "+"}</span>
+            <button
+              onClick={() => {
+                setSheet(null);
+                setShowIntro(true);
+              }}
+              className="flex w-full items-center gap-3 rounded-xl border border-parchment/12 bg-black/30 px-4 py-3 text-left text-sm text-parchment/85 transition active:scale-[0.98]"
+            >
+              <span className="text-parchment/60">{ICONS.play}</span> Replay the opening
+            </button>
+            <form action={signOutAction}>
+              <button className="flex w-full items-center gap-3 rounded-xl border border-parchment/12 bg-black/30 px-4 py-3 text-left text-sm text-parchment/85 transition active:scale-[0.98]">
+                <span className="text-parchment/60">{ICONS.signout}</span> Sign out
               </button>
-              {panelOpen ? (
-                <div className="border-t border-parchment/10 p-5 pt-4">
-                  <GrowthPanel onGrew={handleGrew} />
-                </div>
-              ) : null}
-            </div>
+            </form>
           </div>
-        ) : null}
-        <button
-          onClick={() => setToolsOpen((o) => !o)}
-          className="inline-flex items-center gap-2 rounded-full border border-parchment/25 bg-black/60 px-4 py-2 text-sm text-parchment/85 shadow-lg backdrop-blur transition hover:border-parchment/60 hover:text-parchment"
-        >
-          {ICONS.tools}
-          {toolsOpen ? "Close tools" : "Tools"}
-        </button>
+        </BottomSheet>
+      ) : null}
+
+      {/* Cinematic opening — plays over everything. */}
+      {showIntro ? (
+        <ForestIntro displayName={graph.profile.displayName} onComplete={completeIntro} />
+      ) : null}
+    </div>
+  );
+}
+
+/* ---------------- Mobile chrome pieces ---------------- */
+
+// Round top-bar icon button (search, notifications).
+function IconButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className="relative flex h-10 w-10 items-center justify-center rounded-full border border-parchment/20 bg-black/40 text-parchment/85 shadow-lg backdrop-blur transition active:scale-95"
+    >
+      {children}
+    </button>
+  );
+}
+
+// A bottom-tab-bar item.
+function Tab({
+  label,
+  icon,
+  active,
+  onClick,
+}: {
+  label: string;
+  icon: ReactNode;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-1 flex-col items-center gap-0.5 py-1 transition active:scale-95 ${
+        active ? "text-canopy-light" : "text-parchment/55"
+      }`}
+    >
+      {icon}
+      <span className="text-[10px] font-medium">{label}</span>
+    </button>
+  );
+}
+
+// The glowing center "+" — the primary create action, Facebook-style.
+function CenterTab({ onClick }: { onClick: () => void }) {
+  return (
+    <div className="flex flex-1 justify-center">
+      <button
+        onClick={onClick}
+        aria-label="Grow your forest"
+        className="-mt-6 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-fruit to-canopy-light text-black shadow-[0_0_24px_rgba(232,163,61,0.55)] ring-4 ring-black/40 transition active:scale-95"
+      >
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// A slide-up modal sheet anchored to the bottom of the phone frame.
+function BottomSheet({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50">
+      <div
+        className="absolute inset-0 animate-[scrimIn_0.2s_ease-out] bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="absolute inset-x-0 bottom-0 mx-auto max-h-[82dvh] w-full max-w-md animate-[sheetUp_0.28s_ease-out] overflow-y-auto rounded-t-3xl border-t border-parchment/15 bg-[#0b1710]/97 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-parchment/25" />
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-serif text-xl text-parchment">{title}</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-parchment/20 text-parchment/60 transition active:scale-90"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="6" y1="6" x2="18" y2="18" />
+              <line x1="18" y1="6" x2="6" y2="18" />
+            </svg>
+          </button>
+        </div>
+        {children}
       </div>
     </div>
   );
 }
 
-/* ---------------- Sidebar nav item ---------------- */
-
-function NavItem({
-  label,
+// A tappable row link inside the "More" sheet.
+function SheetLink({
   href,
-  active,
   icon,
+  children,
 }: {
-  label: string;
-  href?: string;
-  active?: boolean;
+  href: string;
   icon: ReactNode;
+  children: ReactNode;
 }) {
-  const base = "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition";
-  if (!href) {
-    return (
-      <span className={`${base} cursor-default text-parchment/30`} title="Coming soon">
-        <span className="shrink-0 opacity-70">{icon}</span>
-        <span>{label}</span>
-        <span className="ml-auto text-[9px] uppercase tracking-wide text-parchment/25">soon</span>
-      </span>
-    );
-  }
   return (
     <Link
       href={href}
-      className={`${base} ${
-        active
-          ? "bg-canopy/30 text-parchment"
-          : "text-parchment/70 hover:bg-white/5 hover:text-parchment"
-      }`}
+      className="flex w-full items-center gap-3 rounded-xl border border-parchment/12 bg-black/30 px-4 py-3 text-sm text-parchment/85 transition active:scale-[0.98]"
     >
-      <span className={`shrink-0 ${active ? "text-canopy-light" : ""}`}>{icon}</span>
-      <span>{label}</span>
+      <span className="text-parchment/60">{icon}</span>
+      {children}
     </Link>
+  );
+}
+
+// Circular Legacy Strength gauge for the floating stats card.
+function LegacyRing({ pct }: { pct: number }) {
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  const dash = (pct / 100) * c;
+  return (
+    <div className="relative h-16 w-16 shrink-0">
+      <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+        <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(246,241,231,0.12)" strokeWidth="5" />
+        <circle
+          cx="32"
+          cy="32"
+          r={r}
+          fill="none"
+          stroke="#4caf6d"
+          strokeWidth="5"
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${c}`}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="font-serif text-base leading-none text-canopy-light">{pct}%</span>
+        <span className="mt-0.5 text-[8px] uppercase tracking-wide text-parchment/45">Legacy</span>
+      </div>
+    </div>
   );
 }
 
@@ -516,6 +684,48 @@ const ICONS = {
   tools: icon(
     <>
       <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.1 2.1-2.1-.6-.6-2.1Z" />
+    </>,
+  ),
+  bell: icon(
+    <>
+      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+    </>,
+  ),
+  play: icon(
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 8.5l5 3.5-5 3.5z" />
+    </>,
+  ),
+  branches: icon(
+    <>
+      <path d="M12 22V7" />
+      <path d="M12 12L7 7" />
+      <path d="M12 10l5-5" />
+      <circle cx="6" cy="6" r="1.8" />
+      <circle cx="18" cy="4" r="1.8" />
+      <circle cx="12" cy="5" r="1.8" />
+    </>,
+  ),
+  photo: icon(
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="M21 16l-5-5-6 6-2-2-5 5" />
+    </>,
+  ),
+  dots: icon(
+    <>
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="19" cy="12" r="1.6" />
+    </>,
+  ),
+  book: icon(
+    <>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
     </>,
   ),
 };

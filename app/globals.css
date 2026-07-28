@@ -17,10 +17,21 @@ body {
   background: radial-gradient(circle at 50% 20%, #12321f 0%, #0a1a11 55%, #06100a 100%);
   color: #f6f1e7;
   font-family: Georgia, Cambria, "Times New Roman", serif;
+  /* Mobile: no rubber-band scroll bouncing the immersive canvas around. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Safe-area helpers for notched phones (used with viewport-fit=cover). */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @keyframes fadeIn {
@@ -31,5 +42,26 @@ body {
   to {
     opacity: 1;
     transform: translate(-50%, 0);
+  }
+}
+
+/* Bottom-sheet slide-up (mobile nav sheets). */
+@keyframes sheetUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scrimIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
