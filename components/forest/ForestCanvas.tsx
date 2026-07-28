@@ -2433,6 +2433,14 @@ function CategoryLantern({
   // from, we lock the group's Y there. Until then we keep re-trying each frame
   // (the GLB loads async, so heroRef geometry isn't there on the first frames).
   const anchored = useRef(false);
+  // Cap the retries. The cone-raycast is expensive (9 rays × full tree geometry)
+  // and, if the lantern sits outside the canopy footprint, it NEVER hits — which
+  // left every lantern re-firing that storm on every single frame forever and
+  // tanked the frame rate. Give each lantern a bounded budget of attempts; once
+  // spent we give up and keep the planned position, so the cost is paid once at
+  // scene start and never again.
+  const anchorTries = useRef(0);
+  const MAX_ANCHOR_TRIES = 120;
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
@@ -2445,6 +2453,7 @@ function CategoryLantern({
     // actually reach the canopy — the old single short ray fell short and left
     // the cords floating. Resolved once per lantern.
     if (!anchored.current && heroRef?.current && groupRef.current) {
+      anchorTries.current += 1;
       _rayFrom.set(position[0], position[1], position[2]);
       const far = reach ?? 40;
       let best: THREE.Intersection | null = null;
@@ -2457,6 +2466,9 @@ function CategoryLantern({
       if (best) {
         // Move the cord's TOP exactly onto the real branch point we found.
         groupRef.current.position.set(best.point.x, best.point.y, best.point.z);
+        anchored.current = true;
+      } else if (anchorTries.current >= MAX_ANCHOR_TRIES) {
+        // Budget spent without a hit — give up and stop the per-frame storm.
         anchored.current = true;
       }
     }
