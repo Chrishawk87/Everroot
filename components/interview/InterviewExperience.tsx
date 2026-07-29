@@ -110,6 +110,8 @@ export default function InterviewExperience({
   // (especially on iOS) whether the mic is really producing audio data.
   const [capturedKb, setCapturedKb] = useState(0);
   const bytesRef = useRef(0);
+  // Human-readable reason the mic is unavailable, so the person knows what to fix.
+  const [micReason, setMicReason] = useState("");
 
   // Recording machinery.
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -142,11 +144,18 @@ export default function InterviewExperience({
       typeof window !== "undefined" &&
         !!(window.SpeechRecognition || window.webkitSpeechRecognition),
     );
-    setCanRecordAudio(
-      typeof window !== "undefined" &&
-        typeof MediaRecorder !== "undefined" &&
-        !!navigator.mediaDevices?.getUserMedia,
-    );
+    if (typeof window === "undefined") return;
+    const secure = window.isSecureContext;
+    const hasMR = typeof MediaRecorder !== "undefined";
+    const hasGUM = !!navigator.mediaDevices?.getUserMedia;
+    setCanRecordAudio(secure && hasMR && hasGUM);
+    if (!secure) {
+      setMicReason(
+        "This page isn't on a secure (https) connection, so the browser blocks the microphone. Open the site using its https:// web address.",
+      );
+    } else if (!hasGUM || !hasMR) {
+      setMicReason("This browser can't record audio. Try Chrome for the full experience.");
+    }
   }, []);
 
   // --- pick a warm voice ---------------------------------------------------
@@ -333,8 +342,20 @@ export default function InterviewExperience({
         // browsers (notably iOS Safari) buffer everything and can hand back an
         // empty blob on stop — so recordings silently failed to save.
         recorder.start(1000);
-      } catch {
-        setError("I couldn't reach your microphone. You can still type your answer below.");
+      } catch (err) {
+        const name = err instanceof Error ? err.name : "unknown error";
+        let why = "Please try again.";
+        if (name === "NotAllowedError") {
+          why =
+            "The browser is blocking the mic for this site. Tap the padlock (or ⋮ menu) in the address bar → Site settings/Permissions → allow Microphone, then reload.";
+        } else if (name === "NotFoundError") {
+          why = "No microphone was found on this device.";
+        } else if (name === "NotReadableError") {
+          why = "Another app may be using the microphone. Close it and try again.";
+        } else if (name === "SecurityError") {
+          why = "The connection isn't secure — open the site using its https:// web address.";
+        }
+        setError(`I couldn't reach your microphone (${name}). ${why} You can still type your answer below.`);
       }
     }
     beginSegment();
@@ -699,6 +720,12 @@ export default function InterviewExperience({
 
             {error ? (
               <p className="mt-3 rounded-lg bg-red-900/40 px-4 py-2 text-sm text-red-200">{error}</p>
+            ) : null}
+
+            {!canRecordAudio && micReason ? (
+              <p className="mt-3 rounded-lg bg-amber-900/30 px-4 py-2 text-sm text-amber-200">
+                {micReason}
+              </p>
             ) : null}
 
             {hasContent && phase !== "recording" ? (
