@@ -234,6 +234,28 @@ export const MOMENT_TYPE_BY_QUESTION: Record<string, string> = {
 /** Flat list of every question in order. */
 export const ALL_QUESTIONS: InterviewQuestion[] = INTERVIEW.flatMap((c) => c.questions);
 
+/**
+ * A free-form memory, reached from the "＋ → Quick voice note" path. It isn't
+ * part of the linear life interview (it never appears in ALL_QUESTIONS), so the
+ * person can drop a memory or voice note in at any time without a scripted
+ * prompt. It grows a normal story leaf on the "Moments & Memories" branch.
+ */
+export const FREE_NOTE_QUESTION: InterviewQuestion = {
+  id: "free-note",
+  prompt: "What would you like to remember?",
+  hint: "Anything at all — a moment, a message, a thought. Speak or type, in your own words.",
+  interaction: "record_story",
+  epoch: "PRESENT",
+  branch: "Moments & Memories",
+  title: "A memory",
+};
+
 export function chapterForQuestion(questionId: string): InterviewChapter | undefined {
   return INTERVIEW.find((c) => c.questions.some((q) => q.id === questionId));
+}
+
+/** Look up any answerable question by id, including the free-form note. */
+export function getQuestionById(id: string): InterviewQuestion | undefined {
+  if (id === FREE_NOTE_QUESTION.id) return FREE_NOTE_QUESTION;
+  return ALL_QUESTIONS.find((q) => q.id === id);
 }

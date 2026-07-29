@@ -821,6 +821,14 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   // height H so it always fills roughly 70% of the opening viewport, whatever
   // the life's size. The camera sits close and low so you look UP at it.
   const isPortrait = typeof window !== "undefined" && window.innerHeight >= window.innerWidth;
+  // Phones / touch devices get a lighter render budget: this scene (shadows,
+  // bloom, thousands of instanced blades + particles) overwhelms mobile GPUs and
+  // tanks the frame rate. lowPower trims the most expensive knobs.
+  const lowPower =
+    typeof window !== "undefined" &&
+    (isPortrait ||
+      window.matchMedia?.("(pointer: coarse)").matches ||
+      Math.min(window.innerWidth, window.innerHeight) < 820);
   const camInit = isPortrait
     ? { position: [H * 0.16, H * 0.54, H * 1.5] as Vec3, fov: 52 }
     : { position: [H * 0.5, H * 0.46, H * 1.9] as Vec3, fov: 48 };
@@ -828,7 +836,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   return (
     <Canvas
       shadows
-      dpr={[1, 2]}
+      dpr={lowPower ? [1, 1.5] : [1, 2]}
       performance={{ min: 0.5 }}
       camera={camInit}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 0.94 }}
@@ -850,7 +858,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         intensity={atmo.dir.intensity}
         color={atmo.dir.color}
         castShadow
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={lowPower ? [1024, 1024] : [2048, 2048]}
         shadow-bias={-0.0004}
         shadow-camera-near={1}
         shadow-camera-far={H * 5}
@@ -979,10 +987,10 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 
       {/* Living flocks: birds wheeling overhead, butterflies over the flowers. */}
       <AssetBoundary label="birds">
-        <Birds count={7} perches={perches} />
+        <Birds count={lowPower ? 4 : 7} perches={perches} />
       </AssetBoundary>
       <AssetBoundary label="butterflies">
-        <Butterflies count={14} anchors={flowerAnchors} />
+        <Butterflies count={lowPower ? 7 : 14} anchors={flowerAnchors} />
       </AssetBoundary>
 
       <SkyClouds />
@@ -1018,7 +1026,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           toward the trunk / the moat's outer bank. */}
       <StonePath start={[0, H * 1.5]} plazaRadius={USE_HERO_TREE ? moatOuter : Math.max(3.2, H * 0.28)} />
       {/* Fireflies wake at dusk and drift low over the garden around the base. */}
-      <Fireflies count={48} radius={Math.min(H * 0.75, 14)} nightRef={nightRef} />
+      <Fireflies count={lowPower ? 22 : 48} radius={Math.min(H * 0.75, 14)} nightRef={nightRef} />
 
       {/* Generational rings ripple outward beneath the floor — one per
           generation of family/heritage — so the roots read as part of a whole
@@ -1146,11 +1154,20 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
 
       {/* Cinematic pass: bloom lifts the glowing memories, stars and low sun;
           SMAA cleans edges; a soft vignette focuses the eye on the tree. */}
-      <EffectComposer multisampling={0} enableNormalPass={false}>
-        <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.28} intensity={0.32} radius={0.6} />
-        <SMAA />
-        <Vignette offset={0.28} darkness={0.62} eskil={false} />
-      </EffectComposer>
+      {lowPower ? (
+        // Mobile: bloom's mipmap blur is the single biggest GPU cost here, so we
+        // drop it and keep only the cheap vignette. Antialiasing is handled by
+        // the WebGL context instead of an SMAA pass.
+        <EffectComposer multisampling={0} enableNormalPass={false}>
+          <Vignette offset={0.28} darkness={0.62} eskil={false} />
+        </EffectComposer>
+      ) : (
+        <EffectComposer multisampling={0} enableNormalPass={false}>
+          <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.28} intensity={0.32} radius={0.6} />
+          <SMAA />
+          <Vignette offset={0.28} darkness={0.62} eskil={false} />
+        </EffectComposer>
+      )}
     </Canvas>
   );
 }

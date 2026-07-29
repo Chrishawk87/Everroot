@@ -304,7 +304,10 @@ export default function InterviewExperience({
           if (ev.data.size > 0) chunksRef.current.push(ev.data);
         };
         recorderRef.current = recorder;
-        recorder.start();
+        // Timeslice: flush a chunk every second. Without this, some mobile
+        // browsers (notably iOS Safari) buffer everything and can hand back an
+        // empty blob on stop — so recordings silently failed to save.
+        recorder.start(1000);
       } catch {
         setError("I couldn't reach your microphone. You can still type your answer below.");
       }
@@ -602,7 +605,9 @@ export default function InterviewExperience({
               onChange={(e) => setTranscript(e.target.value)}
               placeholder={
                 phase === "recording"
-                  ? "Listening… speak naturally, in your own time."
+                  ? canRecognize
+                    ? "Listening… speak naturally, in your own time."
+                    : "Recording your voice now — your words won't appear on screen in this browser, but the audio is being saved. You can also type here."
                   : canRecognize
                     ? "Press record and speak — your words appear here. You can edit them anytime."
                     : "Type your answer here."
