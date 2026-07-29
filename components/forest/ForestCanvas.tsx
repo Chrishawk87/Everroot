@@ -1132,8 +1132,8 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         zoomSpeed={0.8}
         autoRotate={!focusPos}
         autoRotateSpeed={0.28}
-        minDistance={H * 0.85}
-        maxDistance={H * 3.2}
+        minDistance={H * 0.6}
+        maxDistance={H * 6}
         minPolarAngle={0.25}
         maxPolarAngle={Math.PI / 1.3}
         target={[0, H * 0.5, 0]}
