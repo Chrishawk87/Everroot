@@ -67,6 +67,9 @@ export default function ForestExperience({
   const [greeting, setGreeting] = useState("Welcome back");
   // Facebook-style: one active bottom sheet at a time.
   const [sheet, setSheet] = useState<null | "create" | "memories" | "more" | "tree">(null);
+  // The greeting/stats card starts collapsed to a slim pill so it never blocks
+  // the tree; tapping it expands the full dashboard card.
+  const [statsOpen, setStatsOpen] = useState(false);
 
   // Time-of-day greeting, resolved after mount to avoid a hydration mismatch.
   useEffect(() => {
@@ -278,44 +281,60 @@ export default function ForestExperience({
       ) : null}
 
       {/* ---------------- FLOATING STATS CARD ---------------- */}
+      {/* Collapsed by default to a slim pill pinned bottom-left so the tree
+          stays fully in view; tap to expand the full dashboard, tap again (or
+          the chevron) to tuck it away. */}
       {!selected ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 px-4">
-          <div className="pointer-events-auto mx-auto w-full max-w-md rounded-2xl border border-parchment/12 bg-black/55 p-4 backdrop-blur-md">
-            <div className="flex items-center gap-4">
-              <LegacyRing pct={legacyPct} />
-              <div className="min-w-0 flex-1">
-                <p className="font-serif text-lg leading-tight text-parchment">
-                  {greeting}, {firstName} 🌱
-                </p>
-                <p className="mt-0.5 text-xs italic leading-snug text-parchment/55">
-                  The roots of today build the branches of tomorrow.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowIntro(true)}
-                aria-label="Replay intro"
-                className="shrink-0 text-parchment/40 transition active:scale-90 hover:text-parchment/80"
-              >
-                {ICONS.play}
-              </button>
-            </div>
-            <div className="mt-3 grid grid-cols-4 divide-x divide-parchment/10">
-              {stats.map((s) => (
-                <div key={s.label} className="px-1 text-center">
-                  <p className="font-serif text-lg leading-none text-parchment">{s.value}</p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wide text-parchment/50">{s.label}</p>
+          {statsOpen ? (
+            <div className="pointer-events-auto mx-auto w-full max-w-md animate-[fadeIn_0.2s_ease-out] rounded-2xl border border-parchment/12 bg-black/60 p-4 backdrop-blur-md">
+              <div className="flex items-center gap-4">
+                <LegacyRing pct={legacyPct} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-serif text-lg leading-tight text-parchment">
+                    {greeting}, {firstName} 🌱
+                  </p>
+                  <p className="mt-0.5 text-xs italic leading-snug text-parchment/55">
+                    The roots of today build the branches of tomorrow.
+                  </p>
                 </div>
-              ))}
+                <button
+                  onClick={() => setStatsOpen(false)}
+                  aria-label="Hide stats"
+                  className="shrink-0 text-parchment/40 transition active:scale-90 hover:text-parchment/80"
+                >
+                  {ICONS.chevronDown}
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-4 divide-x divide-parchment/10">
+                {stats.map((s) => (
+                  <div key={s.label} className="px-1 text-center">
+                    <p className="font-serif text-lg leading-none text-parchment">{s.value}</p>
+                    <p className="mt-1 text-[10px] uppercase tracking-wide text-parchment/50">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2.5 text-center text-[11px] text-parchment/45">
+                <span className="text-fruit">{stageMeta?.label ?? graph.stage}</span>
+                {next
+                  ? next.min - graph.legacyScore > 0
+                    ? ` · ${next.min - graph.legacyScore} more to reach ${next.label}`
+                    : ` · Ready to become ${next.label}`
+                  : " · Fully grown — an ancient legacy"}
+              </p>
             </div>
-            <p className="mt-2.5 text-center text-[11px] text-parchment/45">
-              <span className="text-fruit">{stageMeta?.label ?? graph.stage}</span>
-              {next
-                ? next.min - graph.legacyScore > 0
-                  ? ` · ${next.min - graph.legacyScore} more to reach ${next.label}`
-                  : ` · Ready to become ${next.label}`
-                : " · Fully grown — an ancient legacy"}
-            </p>
-          </div>
+          ) : (
+            <button
+              onClick={() => setStatsOpen(true)}
+              aria-label="Show your legacy stats"
+              className="pointer-events-auto flex items-center gap-2.5 rounded-full border border-parchment/12 bg-black/55 py-1.5 pl-1.5 pr-4 backdrop-blur-md transition active:scale-95"
+            >
+              <LegacyRing pct={legacyPct} compact />
+              <span className="font-serif text-sm text-parchment">
+                {greeting}, {firstName}
+              </span>
+            </button>
+          )}
         </div>
       ) : null}
 
@@ -566,14 +585,16 @@ function SheetLink({
   );
 }
 
-// Circular Legacy Strength gauge for the floating stats card.
-function LegacyRing({ pct }: { pct: number }) {
+// Circular Legacy Strength gauge for the floating stats card. `compact` renders
+// the small variant used inside the collapsed pill.
+function LegacyRing({ pct, compact = false }: { pct: number; compact?: boolean }) {
   const r = 26;
   const c = 2 * Math.PI * r;
   const dash = (pct / 100) * c;
+  const box = compact ? "h-9 w-9" : "h-16 w-16";
   return (
-    <div className="relative h-16 w-16 shrink-0">
-      <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
+    <div className={`relative shrink-0 ${box}`}>
+      <svg viewBox="0 0 64 64" className={`-rotate-90 ${box}`}>
         <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(246,241,231,0.12)" strokeWidth="5" />
         <circle
           cx="32"
@@ -587,8 +608,10 @@ function LegacyRing({ pct }: { pct: number }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-serif text-base leading-none text-canopy-light">{pct}%</span>
-        <span className="mt-0.5 text-[8px] uppercase tracking-wide text-parchment/45">Legacy</span>
+        <span className={`font-serif leading-none text-canopy-light ${compact ? "text-[10px]" : "text-base"}`}>{pct}%</span>
+        {compact ? null : (
+          <span className="mt-0.5 text-[8px] uppercase tracking-wide text-parchment/45">Legacy</span>
+        )}
       </div>
     </div>
   );
@@ -620,6 +643,7 @@ const ICONS = {
       <path d="M9 16a4 4 0 0 1-1-7.7A4.5 4.5 0 1 1 16 8a4 4 0 0 1-1 8Z" />
     </>,
   ),
+  chevronDown: icon(<path d="M6 9l6 6 6-6" />),
   timeline: icon(
     <>
       <line x1="4" y1="12" x2="20" y2="12" />

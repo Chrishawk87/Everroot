@@ -822,7 +822,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
   // the life's size. The camera sits close and low so you look UP at it.
   const isPortrait = typeof window !== "undefined" && window.innerHeight >= window.innerWidth;
   const camInit = isPortrait
-    ? { position: [H * 0.32, H * 0.5, H * 2.15] as Vec3, fov: 55 }
+    ? { position: [H * 0.16, H * 0.54, H * 1.5] as Vec3, fov: 52 }
     : { position: [H * 0.5, H * 0.46, H * 1.9] as Vec3, fov: 48 };
 
   return (
