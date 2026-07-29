@@ -245,7 +245,6 @@ export const FREE_NOTE_QUESTION: InterviewQuestion = {
   prompt: "What would you like to remember?",
   hint: "Anything at all — a moment, a message, a thought. Speak or type, in your own words.",
   interaction: "record_story",
-  epoch: "PRESENT",
   branch: "Moments & Memories",
   title: "A memory",
 };

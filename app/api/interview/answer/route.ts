@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { grow, ensurePerson, linkMention } from "@/lib/forest/growth-engine";
 import { recordings } from "@/lib/recordings";
 import { storageConfigured, putRecording, newRecordingKey } from "@/lib/storage";
-import { ALL_QUESTIONS, MOMENT_TYPE_BY_QUESTION } from "@/lib/interview/script";
+import { getQuestionById, MOMENT_TYPE_BY_QUESTION } from "@/lib/interview/script";
 import { rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
   const durationMs = Number(form.get("durationMs") ?? 0) || 0;
   const audio = form.get("audio");
 
-  const question = ALL_QUESTIONS.find((q) => q.id === questionId);
+  const question = getQuestionById(questionId);
   if (!question) {
     return NextResponse.json({ error: "Unknown question" }, { status: 400 });
   }

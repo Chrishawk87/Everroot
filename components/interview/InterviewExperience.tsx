@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ALL_QUESTIONS,
+  FREE_NOTE_QUESTION,
   chapterForQuestion,
   type InterviewQuestion,
 } from "@/lib/interview/script";
@@ -37,14 +38,23 @@ type Person = { id: string | null; name: string; relationship?: string | null };
 export default function InterviewExperience({
   displayName,
   people = [],
+  startIndex = 0,
+  noteMode = false,
+  skipIntro = false,
 }: {
   displayName: string;
   people?: { id: string; name: string; relationship: string | null }[];
+  /** Question index to begin at (from "continue" / chapter entry). */
+  startIndex?: number;
+  /** Free-form "quick voice note" — a single question, not the scripted flow. */
+  noteMode?: boolean;
+  /** Skip the intro card and go straight into a question. */
+  skipIntro?: boolean;
 }) {
   const router = useRouter();
 
-  const [phase, setPhase] = useState<Phase>("intro");
-  const [qi, setQi] = useState(0);
+  const [phase, setPhase] = useState<Phase>(skipIntro || noteMode ? "idle" : "intro");
+  const [qi, setQi] = useState(startIndex);
   const [transcript, setTranscript] = useState("");
   const [hasRecorded, setHasRecorded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,8 +127,10 @@ export default function InterviewExperience({
   const followIdxRef = useRef(0);
   const prevChapterRef = useRef<string | null>(null);
 
-  const question: InterviewQuestion | undefined = ALL_QUESTIONS[qi];
-  const chapter = question ? chapterForQuestion(question.id) : undefined;
+  const question: InterviewQuestion | undefined = noteMode
+    ? FREE_NOTE_QUESTION
+    : ALL_QUESTIONS[qi];
+  const chapter = noteMode ? undefined : question ? chapterForQuestion(question.id) : undefined;
   const hasContent = transcript.trim().length > 0 || hasRecorded;
 
   useEffect(() => {
@@ -428,6 +440,23 @@ export default function InterviewExperience({
     goToQuestion(0);
   }, [goToQuestion]);
 
+  // When entered from the + menu we skip the intro card. Kick off the right
+  // opening: a scripted question at startIndex, or the free-form note prompt.
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startedRef.current) return;
+    if (!skipIntro && !noteMode) return;
+    startedRef.current = true;
+    prevChapterRef.current = null;
+    if (noteMode) {
+      setPhase("idle");
+      setTimeout(() => speak(FREE_NOTE_QUESTION.prompt), 300);
+    } else {
+      goToQuestion(startIndex);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Ask a gentle follow-up, then keep listening on the same recording.
   const askFollowUp = useCallback(() => {
     setError(null);
@@ -498,12 +527,18 @@ export default function InterviewExperience({
         );
       }
 
-      goToQuestion(qi + 1, pickAck());
+      if (noteMode) {
+        // A free-form note is a single memory — go straight to the closing card.
+        speakSequence([pickAck()]);
+        setPhase("done");
+      } else {
+        goToQuestion(qi + 1, pickAck());
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong saving that.");
       setPhase("review");
     }
-  }, [question, transcript, hasRecorded, phase, finalizeRecording, goToQuestion, qi, pickAck, roster, selectedKeys]);
+  }, [question, transcript, hasRecorded, phase, finalizeRecording, goToQuestion, qi, pickAck, roster, selectedKeys, noteMode, speakSequence]);
 
   // Rotate the patience line while recording.
   useEffect(() => {
@@ -563,18 +598,26 @@ export default function InterviewExperience({
         ) : (
           <>
             <div className="mb-8">
-              <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.25em] text-canopy-light">
-                <span>{chapter?.title}</span>
-                <span className="text-parchment/40">
-                  {qi + 1} / {ALL_QUESTIONS.length}
-                </span>
-              </div>
-              <div className="h-1 w-full overflow-hidden rounded-full bg-parchment/10">
-                <div
-                  className="h-full rounded-full bg-canopy transition-all duration-700"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
+              {noteMode ? (
+                <div className="text-xs uppercase tracking-[0.25em] text-canopy-light">
+                  Quick voice note
+                </div>
+              ) : (
+                <>
+                  <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.25em] text-canopy-light">
+                    <span>{chapter?.title}</span>
+                    <span className="text-parchment/40">
+                      {qi + 1} / {ALL_QUESTIONS.length}
+                    </span>
+                  </div>
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-parchment/10">
+                    <div
+                      className="h-full rounded-full bg-canopy transition-all duration-700"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="mb-6">
@@ -713,12 +756,25 @@ export default function InterviewExperience({
                     <span className="h-2.5 w-2.5 rounded-full bg-white" />
                     {canRecordAudio ? "Record answer" : "Start"}
                   </button>
-                  <button
-                    onClick={() => goToQuestion(qi + 1)}
-                    className="rounded-full px-4 py-3 text-sm text-parchment/50 transition hover:text-parchment"
-                  >
-                    Skip this one
-                  </button>
+                  {noteMode ? (
+                    <button
+                      onClick={() => {
+                        hardStopRecording();
+                        stopSpeaking();
+                        router.push("/forest");
+                      }}
+                      className="rounded-full px-4 py-3 text-sm text-parchment/50 transition hover:text-parchment"
+                    >
+                      Cancel
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => goToQuestion(qi + 1)}
+                      className="rounded-full px-4 py-3 text-sm text-parchment/50 transition hover:text-parchment"
+                    >
+                      Skip this one
+                    </button>
+                  )}
                 </>
               ) : (
                 <>
@@ -727,7 +783,7 @@ export default function InterviewExperience({
                     disabled={phase === "saving"}
                     className="rounded-full bg-fruit px-6 py-3 font-semibold text-[#3a2600] transition hover:brightness-110 disabled:opacity-60"
                   >
-                    {phase === "saving" ? "Growing…" : "Save & continue"}
+                    {phase === "saving" ? "Growing…" : noteMode ? "Save note" : "Save & continue"}
                   </button>
                   <button
                     onClick={askFollowUp}
@@ -743,13 +799,15 @@ export default function InterviewExperience({
                   >
                     Start over
                   </button>
-                  <button
-                    onClick={() => goToQuestion(qi + 1)}
-                    disabled={phase === "saving"}
-                    className="rounded-full px-3 py-3 text-sm text-parchment/45 transition hover:text-parchment"
-                  >
-                    Skip
-                  </button>
+                  {!noteMode ? (
+                    <button
+                      onClick={() => goToQuestion(qi + 1)}
+                      disabled={phase === "saving"}
+                      className="rounded-full px-3 py-3 text-sm text-parchment/45 transition hover:text-parchment"
+                    >
+                      Skip
+                    </button>
+                  ) : null}
                 </>
               )}
             </div>

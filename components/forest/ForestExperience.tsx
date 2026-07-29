@@ -15,6 +15,7 @@ import CapsulePanel from "./CapsulePanel";
 import CategoryPanel from "./CategoryPanel";
 import GuardianPanel, { type FamilyOption } from "./GuardianPanel";
 import { signOutAction } from "@/app/actions/forest";
+import { INTERVIEW } from "@/lib/interview/script";
 
 // three.js only runs in the browser — load the canvas without SSR.
 const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
@@ -66,7 +67,7 @@ export default function ForestExperience({
   const [showIntro, setShowIntro] = useState(false);
   const [greeting, setGreeting] = useState("Welcome back");
   // Facebook-style: one active bottom sheet at a time.
-  const [sheet, setSheet] = useState<null | "create" | "memories" | "more" | "tree">(null);
+  const [sheet, setSheet] = useState<null | "create" | "chapters" | "memories" | "more" | "tree">(null);
   // The greeting/stats card starts collapsed to a slim pill so it never blocks
   // the tree; tapping it expands the full dashboard card.
   const [statsOpen, setStatsOpen] = useState(false);
@@ -351,15 +352,88 @@ export default function ForestExperience({
 
       {/* ---------------- BOTTOM SHEETS ---------------- */}
       {sheet === "create" ? (
-        <BottomSheet title="Grow your forest" onClose={() => setSheet(null)}>
-          <Link
-            href="/interview"
-            className="mb-4 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-canopy to-canopy-light py-3 text-sm font-medium text-white shadow transition active:scale-[0.98]"
-          >
-            {ICONS.mic} Record a memory
-          </Link>
-          <div className="rounded-2xl border border-parchment/12 bg-black/30 p-4">
+        <BottomSheet title="Add a memory" onClose={() => setSheet(null)}>
+          <p className="mb-4 text-sm text-parchment/60">
+            How would you like to grow your forest?
+          </p>
+          <div className="space-y-3">
+            <Link
+              href="/interview?mode=resume"
+              onClick={() => setSheet(null)}
+              className="flex items-center gap-3 rounded-2xl border border-parchment/12 bg-black/30 p-4 transition active:scale-[0.98]"
+            >
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-canopy/25 text-canopy-light">
+                {ICONS.timeline}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-parchment">Continue my story</span>
+                <span className="block text-xs text-parchment/50">Pick up at your next question</span>
+              </span>
+              <span className="text-parchment/40">{ICONS.chevronRight}</span>
+            </Link>
+
+            <button
+              onClick={() => setSheet("chapters")}
+              className="flex w-full items-center gap-3 rounded-2xl border border-parchment/12 bg-black/30 p-4 text-left transition active:scale-[0.98]"
+            >
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-canopy/25 text-canopy-light">
+                {ICONS.tree}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-parchment">Add to a chapter</span>
+                <span className="block text-xs text-parchment/50">Choose a part of your life</span>
+              </span>
+              <span className="text-parchment/40">{ICONS.chevronRight}</span>
+            </button>
+
+            <Link
+              href="/interview?mode=note"
+              onClick={() => setSheet(null)}
+              className="flex items-center gap-3 rounded-2xl border border-parchment/12 bg-black/30 p-4 transition active:scale-[0.98]"
+            >
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-fruit/25 text-fruit">
+                {ICONS.mic}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-parchment">Quick voice note</span>
+                <span className="block text-xs text-parchment/50">Drop in a memory anytime</span>
+              </span>
+              <span className="text-parchment/40">{ICONS.chevronRight}</span>
+            </Link>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-parchment/12 bg-black/20 p-4">
+            <p className="mb-3 text-xs uppercase tracking-[0.2em] text-parchment/40">
+              Or add something directly
+            </p>
             <GrowthPanel onGrew={handleGrew} />
+          </div>
+        </BottomSheet>
+      ) : null}
+
+      {sheet === "chapters" ? (
+        <BottomSheet title="Add to a chapter" onClose={() => setSheet(null)}>
+          <button
+            onClick={() => setSheet("create")}
+            className="mb-3 text-sm text-parchment/50 transition hover:text-parchment"
+          >
+            ‹ Back
+          </button>
+          <div className="space-y-2.5">
+            {INTERVIEW.map((ch) => (
+              <Link
+                key={ch.id}
+                href={`/interview?chapter=${ch.id}`}
+                onClick={() => setSheet(null)}
+                className="flex items-center gap-3 rounded-2xl border border-parchment/12 bg-black/30 p-4 transition active:scale-[0.98]"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-parchment">{ch.title}</span>
+                  <span className="block text-xs text-parchment/50">{ch.intro}</span>
+                </span>
+                <span className="text-parchment/40">{ICONS.chevronRight}</span>
+              </Link>
+            ))}
           </div>
         </BottomSheet>
       ) : null}
@@ -644,6 +718,7 @@ const ICONS = {
     </>,
   ),
   chevronDown: icon(<path d="M6 9l6 6 6-6" />),
+  chevronRight: icon(<path d="M9 6l6 6-6 6" />),
   timeline: icon(
     <>
       <line x1="4" y1="12" x2="20" y2="12" />
