@@ -106,6 +106,10 @@ export default function InterviewExperience({
 
   const [canRecognize, setCanRecognize] = useState(false);
   const [canRecordAudio, setCanRecordAudio] = useState(false);
+  // Bytes actually captured by the recorder — surfaced on screen so we can tell
+  // (especially on iOS) whether the mic is really producing audio data.
+  const [capturedKb, setCapturedKb] = useState(0);
+  const bytesRef = useRef(0);
 
   // Recording machinery.
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -300,10 +304,15 @@ export default function InterviewExperience({
   // Fresh recording for this question.
   const startRecording = useCallback(async () => {
     setError(null);
+    // iOS keeps the audio session in "playback" while speech synthesis is
+    // active, which can make the mic capture silence. Cancel any speech and let
+    // the session flip to record before we open the mic.
     stopSpeaking();
     committedRef.current = transcript ? transcript.trimEnd() + " " : "";
     finalRef.current = "";
     accMsRef.current = 0;
+    bytesRef.current = 0;
+    setCapturedKb(0);
 
     if (canRecordAudio) {
       try {
@@ -313,7 +322,11 @@ export default function InterviewExperience({
         const mimeType = pickMimeType();
         const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
         recorder.ondataavailable = (ev) => {
-          if (ev.data.size > 0) chunksRef.current.push(ev.data);
+          if (ev.data && ev.data.size > 0) {
+            chunksRef.current.push(ev.data);
+            bytesRef.current += ev.data.size;
+            setCapturedKb(Math.round(bytesRef.current / 1024));
+          }
         };
         recorderRef.current = recorder;
         // Timeslice: flush a chunk every second. Without this, some mobile
@@ -370,13 +383,28 @@ export default function InterviewExperience({
           return;
         }
         rec.onstop = () => {
-          const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+          const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/mp4" });
           audioBlobRef.current = blob;
           teardownStream();
           recorderRef.current = null;
           resolve(blob);
         };
         try {
+          // On iOS, stopping a *paused* recorder can hand back an empty file.
+          // Resume it first, then flush any buffered audio before stopping so
+          // the final chunk is captured.
+          if (rec.state === "paused") {
+            try {
+              rec.resume();
+            } catch {
+              /* ignore */
+            }
+          }
+          try {
+            rec.requestData();
+          } catch {
+            /* ignore */
+          }
           rec.stop();
         } catch {
           resolve(audioBlobRef.current);
@@ -485,6 +513,16 @@ export default function InterviewExperience({
       const blob = await finalizeRecording();
       const durationMs =
         accMsRef.current + (phase === "recording" ? Date.now() - segStartRef.current : 0);
+
+      // Don't save an empty memory: if the mic produced no audio and there's no
+      // typed text, tell the person rather than silently storing nothing.
+      if (!text && (!blob || blob.size === 0)) {
+        setError(
+          "I didn't catch any audio or text. Please try recording again, or type your answer below.",
+        );
+        setPhase("review");
+        return;
+      }
 
       const fd = new FormData();
       fd.append("questionId", question.id);
@@ -811,6 +849,20 @@ export default function InterviewExperience({
                 </>
               )}
             </div>
+
+            {canRecordAudio && (phase === "recording" || (phase === "review" && hasRecorded)) ? (
+              <p
+                className={`mt-4 text-xs ${
+                  capturedKb > 0 ? "text-parchment/45" : "text-amber-300/80"
+                }`}
+              >
+                {capturedKb > 0
+                  ? `Voice captured: ${capturedKb} KB${phase === "recording" ? " and counting…" : ""}`
+                  : phase === "recording"
+                    ? "Waiting for audio from your mic… if this stays at 0 KB, your device isn't sending audio."
+                    : "No audio was captured this time — try recording again, or type your answer."}
+              </p>
+            ) : null}
 
             {!canRecognize ? (
               <p className="mt-6 text-xs text-parchment/40">
