@@ -535,19 +535,19 @@ export default function InterviewExperience({
   const progress = Math.round((qi / ALL_QUESTIONS.length) * 100);
 
   return (
-    <main className="relative min-h-screen bg-gradient-to-b from-[#0b1410] via-[#0a1a12] to-[#05090a] px-6 py-10 font-sans text-parchment">
+    <main className="relative min-h-[100dvh] bg-gradient-to-b from-[#0b1410] via-[#0a1a12] to-[#05090a] px-4 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(4.5rem,calc(env(safe-area-inset-top)+3.5rem))] font-sans text-parchment sm:px-6">
       <button
         onClick={() => {
           hardStopRecording();
           stopSpeaking();
           router.push("/forest");
         }}
-        className="absolute right-6 top-6 rounded-full border border-parchment/20 bg-black/30 px-4 py-1.5 text-sm text-parchment/70 transition hover:border-parchment/50 hover:text-parchment"
+        className="absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-10 rounded-full border border-parchment/20 bg-black/30 px-4 py-1.5 text-sm text-parchment/70 transition hover:border-parchment/50 hover:text-parchment"
       >
         {phase === "done" ? "To my forest ›" : "Save & exit ›"}
       </button>
 
-      <div className="mx-auto flex min-h-[80vh] max-w-2xl flex-col justify-center">
+      <div className="mx-auto flex min-h-[75vh] max-w-2xl flex-col justify-center">
         {phase === "intro" ? (
           <IntroCard
             displayName={displayName}

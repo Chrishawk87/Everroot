@@ -24,7 +24,7 @@ export default function LoginPage() {
   const [state, formAction] = useFormState(login, initialState);
 
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-12">
+    <main className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-5 py-[max(3rem,env(safe-area-inset-top))]">
       {/* Golden-hour valley — the world you're returning to. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -44,7 +44,7 @@ export default function LoginPage() {
         }}
       />
 
-      <div className="relative z-10 w-full max-w-md rounded-3xl border border-parchment/15 bg-black/35 p-8 backdrop-blur-md">
+      <div className="relative z-10 w-full max-w-md rounded-3xl border border-parchment/15 bg-black/35 p-6 backdrop-blur-md sm:p-8">
       <h1 className="mb-2 font-serif text-3xl text-parchment">Welcome back</h1>
       <p className="mb-8 text-parchment/70">Return to your Living Legacy Forest.</p>
 
@@ -56,7 +56,7 @@ export default function LoginPage() {
             type="email"
             required
             autoComplete="email"
-            className="rounded-lg border border-parchment/20 bg-black/20 px-4 py-2.5 text-parchment outline-none transition focus:border-canopy-light"
+            className="rounded-lg border border-parchment/20 bg-black/20 px-4 py-3 text-base text-parchment outline-none transition focus:border-canopy-light"
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
@@ -66,7 +66,7 @@ export default function LoginPage() {
             type="password"
             required
             autoComplete="current-password"
-            className="rounded-lg border border-parchment/20 bg-black/20 px-4 py-2.5 text-parchment outline-none transition focus:border-canopy-light"
+            className="rounded-lg border border-parchment/20 bg-black/20 px-4 py-3 text-base text-parchment outline-none transition focus:border-canopy-light"
           />
         </label>
 

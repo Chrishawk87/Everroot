@@ -25,7 +25,7 @@ export default function SignupForm({ invite }: { invite?: InvitePreview | null }
   const [state, formAction] = useFormState(signup, initialState);
 
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-12">
+    <main className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-5 py-[max(3rem,env(safe-area-inset-top))]">
       {/* Inside the sunlit canopy — where a new life begins as a seed. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -45,7 +45,7 @@ export default function SignupForm({ invite }: { invite?: InvitePreview | null }
         }}
       />
 
-      <div className="relative z-10 w-full max-w-md rounded-3xl border border-parchment/15 bg-black/35 p-8 backdrop-blur-md">
+      <div className="relative z-10 w-full max-w-md rounded-3xl border border-parchment/15 bg-black/35 p-6 backdrop-blur-md sm:p-8">
       <h1 className="mb-2 font-serif text-3xl text-parchment">Plant your seed</h1>
 
       {invite ? (
@@ -123,7 +123,7 @@ function Field({
       <span className="text-parchment/80">{label}</span>
       <input
         {...props}
-        className="rounded-lg border border-parchment/20 bg-black/20 px-4 py-2.5 text-parchment outline-none transition focus:border-canopy-light"
+        className="rounded-lg border border-parchment/20 bg-black/20 px-4 py-3 text-base text-parchment outline-none transition focus:border-canopy-light"
       />
       {hint ? <span className="text-xs text-parchment/50">{hint}</span> : null}
     </label>

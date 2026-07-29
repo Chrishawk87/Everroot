@@ -31,11 +31,11 @@ export default function BookView({ book, isSelf }: { book: Book; isSelf: boolean
   );
 
   return (
-    <div className="min-h-screen bg-[#2a2f26] py-8 font-sans print:bg-white print:py-0">
+    <div className="min-h-[100dvh] bg-[#2a2f26] pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] font-sans print:bg-white print:py-0">
       <style dangerouslySetInnerHTML={{ __html: PRINT_CSS }} />
 
       {/* Toolbar — screen only */}
-      <div className="no-print mx-auto mb-6 flex max-w-[820px] items-center justify-between px-4">
+      <div className="no-print mx-auto mb-6 flex max-w-[820px] items-center justify-between px-[max(1rem,env(safe-area-inset-left))]">
         <Link
           href={isSelf ? "/forest" : "/family"}
           className="text-sm text-parchment/70 transition hover:text-parchment"
