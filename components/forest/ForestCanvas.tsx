@@ -1131,6 +1131,25 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
           />
         ))}
 
+      {/* Photos/videos the owner chose to hang out on the tree. Memories aren't
+          drawn as leaves anymore, so these get their own pass: a framed picture
+          at the memory's foliage point, out among the branches. */}
+      {layout.positioned
+        .filter(
+          (p) =>
+            MEMORY_KINDS.has(p.node.kind) &&
+            p.node.data?.onTree === true &&
+            typeof p.node.data?.thumb === "string",
+        )
+        .map((p) => (
+          <TreePhoto
+            key={p.node.id}
+            positioned={p}
+            selected={p.node.id === selectedId}
+            onSelect={onSelect}
+          />
+        ))}
+
       <OrbitControls
         makeDefault
         enablePan={false}
@@ -2678,12 +2697,6 @@ function NodeGlyph({
 
   const color = overrideColor ?? COLORS[node.kind] ?? "#9ad0b0";
   const isMemory = MEMORY_KINDS.has(node.kind);
-  // A photo/video the owner chose to hang out on the tree carries an on-device
-  // thumbnail in its data payload; render it as a framed photo instead of a leaf.
-  const thumb = typeof node.data?.thumb === "string" ? (node.data.thumb as string) : undefined;
-  const framed = isMemory && node.data?.onTree === true && !!thumb;
-  const isVideoMemory = node.data?.mediaType === "video";
-  const thumbTex = useThumbTexture(framed ? thumb : undefined);
   // Family (PERSON) and heritage (ROOT) live underground; their names surface
   // when the camera tilts below the earth, so they carry a persistent label too.
   const isRootWorld = node.kind === "PERSON" || node.kind === "ROOT";
@@ -2710,11 +2723,7 @@ function NodeGlyph({
         onSelect(node);
       }}
     >
-      {framed && thumbTex ? (
-        <FramedPhoto scale={scale} texture={thumbTex} isVideo={isVideoMemory} selected={selected} />
-      ) : (
-        <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew || selected} categorized={!!overrideColor} leafTex={leafTex} seed={hash01(node.id, 9)} />
-      )}
+      <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew || selected} categorized={!!overrideColor} leafTex={leafTex} seed={hash01(node.id, 9)} />
       {justGrew ? <GrowthBurst scale={scale} /> : null}
 
       {/* Bloom-on-touch: a warm glowing halo opens around the chosen memory. */}
@@ -2856,6 +2865,61 @@ function FramedPhoto({
             <meshBasicMaterial color="#ffffff" />
           </mesh>
         </group>
+      ) : null}
+    </group>
+  );
+}
+
+// A memory the owner chose to hang out on the tree. It sits at the same foliage
+// point the layout gave the memory (out among the branches), rendered as a
+// gilded frame showing its thumbnail. Clicking it opens the full memory, just
+// like any other node. This is a standalone pass because memory glyphs are no
+// longer drawn as leaves — every memory otherwise lives inside its lantern.
+function TreePhoto({
+  positioned,
+  selected,
+  onSelect,
+}: {
+  positioned: PositionedNode;
+  selected: boolean;
+  onSelect: (node: ForestNodeDTO | null) => void;
+}) {
+  const { node, position, scale } = positioned;
+  const [hovered, setHovered] = useState(false);
+  const thumb = typeof node.data?.thumb === "string" ? (node.data.thumb as string) : undefined;
+  const isVideo = node.data?.mediaType === "video";
+  const tex = useThumbTexture(thumb);
+  const year = useMemo(() => {
+    const d = new Date(node.createdAt);
+    return Number.isNaN(d.getTime()) ? null : d.getFullYear();
+  }, [node.createdAt]);
+  if (!tex) return null;
+
+  return (
+    <group
+      position={position as Vec3}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHovered(true);
+        document.body.style.cursor = "pointer";
+      }}
+      onPointerOut={() => {
+        setHovered(false);
+        document.body.style.cursor = "default";
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(node);
+      }}
+    >
+      <FramedPhoto scale={Math.max(scale, 0.24)} texture={tex} isVideo={isVideo} selected={selected} />
+      {hovered || selected ? (
+        <Html center distanceFactor={12} position={[0, scale * 5 + 0.6, 0]}>
+          <div className="pointer-events-none select-none whitespace-nowrap rounded-full bg-black/75 px-3 py-1 font-serif text-xs text-parchment [text-shadow:0_1px_4px_rgba(0,0,0,0.9)]">
+            {node.title}
+            {year ? <span className="text-parchment/50"> · {year}</span> : null}
+          </div>
+        </Html>
       ) : null}
     </group>
   );
