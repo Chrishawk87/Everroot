@@ -526,9 +526,11 @@ interface Props {
   memorial?: boolean;
   /** Navigate to a linked family member's own forest (their /family/[userId]). */
   onOpenFamily?: (userId: string) => void;
+  /** Open a hung photo/video full-screen (photo enlarges, video plays). */
+  onOpenMedia?: (node: ForestNodeDTO) => void;
 }
 
-export default function ForestCanvas({ graph, selectedId, focusId, onSelect, memorial = false, onOpenFamily }: Props) {
+export default function ForestCanvas({ graph, selectedId, focusId, onSelect, memorial = false, onOpenFamily, onOpenMedia }: Props) {
   const layout = useMemo(() => computeLayout(graph), [graph]);
   // The tree's height is the master dimension of the whole composition — camera,
   // fog, shadows, the Legacy Plaza, the path, the stream and the surrounding
@@ -1146,7 +1148,7 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             key={p.node.id}
             positioned={p}
             selected={p.node.id === selectedId}
-            onSelect={onSelect}
+            onOpenMedia={onOpenMedia!}
           />
         ))}
 
@@ -2819,53 +2821,62 @@ function FramedPhoto({
 
   // Keep a sensible minimum so a tiny leaf-scale memory still shows a real frame.
   const s = Math.max(scale, 0.16);
-  const w = s * 4.2;
-  const h = s * 4.2;
+  const w = s * 3.6;
+  const h = s * 3.6;
   const border = s * 0.5;
   const glowI = selected ? 0.55 : 0.3;
 
+  // The group's origin sits ON the branch (the layout's foliage point). The
+  // frame HANGS below it from a cord, like a real hanging picture — so it reads
+  // as attached to the tree rather than floating above the canopy.
+  const cordLen = s * 1.6;
+  const hangY = -(cordLen + h / 2 + border / 2);
+
   return (
     <group ref={group}>
-      {/* short cord so the frame reads as hanging from the branch above it */}
-      <mesh position={[0, h / 2 + s * 0.9, 0]}>
-        <cylinderGeometry args={[s * 0.05, s * 0.05, s * 1.8, 6]} />
+      {/* cord from the branch point down to the top of the frame */}
+      <mesh position={[0, -cordLen / 2, 0]}>
+        <cylinderGeometry args={[s * 0.05, s * 0.05, cordLen, 6]} />
         <meshStandardMaterial color="#6b5a3a" roughness={0.85} />
       </mesh>
-      {/* gilded frame */}
-      <mesh position={[0, 0, -s * 0.08]} castShadow>
-        <boxGeometry args={[w + border, h + border, s * 0.18]} />
-        <meshStandardMaterial
-          color="#caa96a"
-          roughness={0.45}
-          metalness={0.35}
-          emissive="#caa96a"
-          emissiveIntensity={glowI * 0.4}
-        />
-      </mesh>
-      {/* the photo / video still */}
-      <mesh position={[0, 0, s * 0.03]}>
-        <planeGeometry args={[w, h]} />
-        <meshStandardMaterial
-          map={texture}
-          emissiveMap={texture}
-          emissive="#ffffff"
-          emissiveIntensity={glowI}
-          roughness={0.6}
-        />
-      </mesh>
-      {/* play badge for videos */}
-      {isVideo ? (
-        <group position={[0, 0, s * 0.06]}>
-          <mesh>
-            <circleGeometry args={[s * 0.72, 24]} />
-            <meshBasicMaterial color="#000000" transparent opacity={0.45} depthWrite={false} />
-          </mesh>
-          <mesh position={[s * 0.06, 0, 0.01]}>
-            <circleGeometry args={[s * 0.34, 3]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-        </group>
-      ) : null}
+      {/* the framed picture, hanging below the cord */}
+      <group position={[0, hangY, 0]}>
+        {/* gilded frame */}
+        <mesh position={[0, 0, -s * 0.08]} castShadow>
+          <boxGeometry args={[w + border, h + border, s * 0.18]} />
+          <meshStandardMaterial
+            color="#caa96a"
+            roughness={0.45}
+            metalness={0.35}
+            emissive="#caa96a"
+            emissiveIntensity={glowI * 0.4}
+          />
+        </mesh>
+        {/* the photo / video still */}
+        <mesh position={[0, 0, s * 0.03]}>
+          <planeGeometry args={[w, h]} />
+          <meshStandardMaterial
+            map={texture}
+            emissiveMap={texture}
+            emissive="#ffffff"
+            emissiveIntensity={glowI}
+            roughness={0.6}
+          />
+        </mesh>
+        {/* play badge for videos */}
+        {isVideo ? (
+          <group position={[0, 0, s * 0.06]}>
+            <mesh>
+              <circleGeometry args={[s * 0.72, 24]} />
+              <meshBasicMaterial color="#000000" transparent opacity={0.45} depthWrite={false} />
+            </mesh>
+            <mesh position={[s * 0.06, 0, 0.01]} rotation={[0, 0, -Math.PI / 2]}>
+              <circleGeometry args={[s * 0.34, 3]} />
+              <meshBasicMaterial color="#ffffff" />
+            </mesh>
+          </group>
+        ) : null}
+      </group>
     </group>
   );
 }
@@ -2878,11 +2889,11 @@ function FramedPhoto({
 function TreePhoto({
   positioned,
   selected,
-  onSelect,
+  onOpenMedia,
 }: {
   positioned: PositionedNode;
   selected: boolean;
-  onSelect: (node: ForestNodeDTO | null) => void;
+  onOpenMedia: (node: ForestNodeDTO) => void;
 }) {
   const { node, position, scale } = positioned;
   const [hovered, setHovered] = useState(false);
@@ -2894,6 +2905,10 @@ function TreePhoto({
     return Number.isNaN(d.getTime()) ? null : d.getFullYear();
   }, [node.createdAt]);
   if (!tex) return null;
+
+  const s = Math.max(scale, 0.24);
+  // Sit the label just below the branch point, over the top of the frame.
+  const labelY = -(s * 1.6 + 0.35);
 
   return (
     <group
@@ -2909,12 +2924,14 @@ function TreePhoto({
       }}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(node);
+        // Tapping a hung photo/video opens it full-screen: a photo enlarges, a
+        // video plays. (Comments/reactions stay reachable via the drawer.)
+        onOpenMedia(node);
       }}
     >
-      <FramedPhoto scale={Math.max(scale, 0.24)} texture={tex} isVideo={isVideo} selected={selected} />
+      <FramedPhoto scale={s} texture={tex} isVideo={isVideo} selected={selected} />
       {hovered || selected ? (
-        <Html center distanceFactor={12} position={[0, scale * 5 + 0.6, 0]}>
+        <Html center distanceFactor={12} position={[0, labelY, 0]}>
           <div className="pointer-events-none select-none whitespace-nowrap rounded-full bg-black/75 px-3 py-1 font-serif text-xs text-parchment [text-shadow:0_1px_4px_rgba(0,0,0,0.9)]">
             {node.title}
             {year ? <span className="text-parchment/50"> · {year}</span> : null}

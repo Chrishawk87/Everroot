@@ -18,6 +18,7 @@ interface CategoryItem {
   durationMs: number;
   isVideo: boolean;
   photoUrl: string | null;
+  onTree: boolean;
 }
 
 interface Contents {
@@ -209,6 +210,54 @@ export default function CategoryPanel({
     [upload],
   );
 
+  // Which items are mid-toggle, so we can disable their switch + show a hint.
+  const [toggling, setToggling] = useState<Record<string, boolean>>({});
+
+  // Flip whether a memory hangs on the tree. Turning ON needs a thumbnail for
+  // the frame: if the memory doesn't have one yet we make one on-device from its
+  // stored media (its photo, or the first frame of its video). We update the
+  // drawer optimistically so the switch feels instant.
+  const toggleOnTree = useCallback(
+    async (it: CategoryItem) => {
+      const next = !it.onTree;
+      setToggling((m) => ({ ...m, [it.nodeId]: true }));
+      setContents((prev) =>
+        prev
+          ? { ...prev, items: prev.items.map((x) => (x.nodeId === it.nodeId ? { ...x, onTree: next } : x)) }
+          : prev,
+      );
+      try {
+        let thumb: string | null = null;
+        if (next && it.recordingId) {
+          try {
+            const res = await fetch(`/api/recordings/${it.recordingId}`);
+            if (res.ok) {
+              const blob = await res.blob();
+              const file = new File([blob], "media", { type: blob.type || it.mimeType || "" });
+              thumb = await makeThumb(file);
+            }
+          } catch {
+            thumb = null; // frame will simply show without a picture; not fatal
+          }
+        }
+        const res = await fetch(`/api/memory/${it.nodeId}/on-tree`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ onTree: next, ...(thumb ? { thumb } : {}) }),
+        });
+        if (!res.ok) throw new Error("toggle failed");
+      } catch {
+        load(); // reconcile with the server on any failure
+      } finally {
+        setToggling((m) => {
+          const { [it.nodeId]: _drop, ...rest } = m;
+          return rest;
+        });
+      }
+    },
+    [load],
+  );
+
   const items = contents?.items ?? [];
 
   return (
@@ -398,6 +447,27 @@ export default function CategoryPanel({
                     <p className="mt-3 whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/75">
                       {it.summary}
                     </p>
+                  ) : null}
+                  {/* Owner-only: hang this memory on the tree, or take it down. */}
+                  {contents.canEdit && (it.recordingId || it.photoUrl) ? (
+                    <button
+                      onClick={() => void toggleOnTree(it)}
+                      disabled={!!toggling[it.nodeId]}
+                      className={`mt-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition disabled:opacity-50 ${
+                        it.onTree
+                          ? "border-fruit/60 bg-fruit/15 text-parchment"
+                          : "border-parchment/20 bg-black/30 text-parchment/70 hover:border-parchment/50"
+                      }`}
+                    >
+                      <span>{it.onTree ? "🌳" : "＋"}</span>
+                      <span>
+                        {toggling[it.nodeId]
+                          ? "Updating…"
+                          : it.onTree
+                            ? "Hanging on the tree — tap to take down"
+                            : "Hang on the tree"}
+                      </span>
+                    </button>
                   ) : null}
                   <MemorySocial nodeId={it.nodeId} />
                 </li>

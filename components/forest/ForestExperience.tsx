@@ -67,6 +67,8 @@ export default function ForestExperience({
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<ForestNodeDTO | null>(null);
+  // A hung photo/video the viewer tapped to open full-screen.
+  const [mediaNode, setMediaNode] = useState<ForestNodeDTO | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [showIntro, setShowIntro] = useState(false);
@@ -188,6 +190,7 @@ export default function ForestExperience({
           onSelect={setSelected}
           memorial={graph.isMemorial}
           onOpenFamily={(userId) => router.push(`/family/${userId}`)}
+          onOpenMedia={setMediaNode}
         />
       </div>
 
@@ -242,6 +245,42 @@ export default function ForestExperience({
             <span className="text-fruit">✦</span>
             <span>{toast}</span>
           </div>
+        </div>
+      ) : null}
+
+      {/* Tap a hung photo/video → full-screen: a photo enlarges, a video plays.
+          Backdrop or ✕ closes. The media resolves through a redirect endpoint
+          so the viewer doesn't need to know the recording id. */}
+      {mediaNode ? (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 animate-[fadeIn_0.25s_ease-out]"
+          onClick={() => setMediaNode(null)}
+        >
+          <button
+            aria-label="Close"
+            onClick={() => setMediaNode(null)}
+            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/60 text-xl text-parchment backdrop-blur pt-safe"
+          >
+            ✕
+          </button>
+          {mediaNode.data?.mediaType === "video" ? (
+            <video
+              src={`/api/memory/${mediaNode.id}/media`}
+              controls
+              autoPlay
+              playsInline
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[85vh] max-w-full rounded-lg shadow-2xl"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/memory/${mediaNode.id}/media`}
+              alt={mediaNode.title ?? "Memory"}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl"
+            />
+          )}
         </div>
       ) : null}
 

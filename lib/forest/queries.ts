@@ -500,6 +500,9 @@ export interface CategoryItem {
   durationMs: number;
   isVideo: boolean;
   photoUrl: string | null;
+  // True when the owner has chosen to hang this memory on the tree as a framed
+  // photo. Editable per-item from the category drawer.
+  onTree: boolean;
 }
 
 // Everything associated with one category branch (e.g. "Messages for the
@@ -609,6 +612,8 @@ export async function getCategoryContents(
       durationMs: rec?.durationMs ?? 0,
       isVideo: mimeType?.startsWith("video") ?? false,
       photoUrl: photoUrlFromData(n.data),
+      onTree:
+        !!n.data && typeof n.data === "object" && (n.data as Record<string, unknown>).onTree === true,
     });
   }
 
