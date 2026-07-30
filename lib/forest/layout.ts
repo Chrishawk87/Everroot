@@ -120,54 +120,37 @@ export interface GrowthMetrics {
  * never top-heavy or spindly — the data moves its size and fullness, never its
  * good proportions.
  */
-export function computeGrowth(graph: ForestGraph): GrowthMetrics {
-  const counts = graph.counts as Record<string, number>;
-  const memoryCount = MEMORY_KINDS_FOR_GROWTH.reduce((s, k) => s + (counts[k] ?? 0), 0);
-  const branchCount = counts.BRANCH ?? 0;
-  const score = graph.legacyScore;
+export function computeGrowth(_graph: ForestGraph): GrowthMetrics {
+  // MATURE FROM DAY ONE.
+  // The tree is a finished monument the moment an account is created — its size
+  // and fullness never change. A life's data no longer grows the tree itself;
+  // it fills the tree's lanterns (its ten category lanterns and one lantern per
+  // family member). So these metrics are fixed at "grand mature tree" values,
+  // independent of legacy score or memory count. Every camera / fog / shadow /
+  // environment dimension downstream derives from trunkHeight, so the whole
+  // scene stays composed around this one constant size.
+  const growth01 = 0.78; // a grand, mature tree (just shy of the old "ancient" ceiling)
+  const girth01 = 0.7; // full, aged trunk
+  const fullness01 = 0.85; // lush, layered crown
 
-  // Overall scale climbs with the legacy score, saturating so an enormous life
-  // still tops out as a single grand tree rather than growing without limit.
-  // The ceiling is deliberately tall: a full life should TOWER over the viewer.
-  const growth01 = saturate(score, 260); // ~0.14 @40, ~0.62 @250, ~0.90 @600
-  const baseHeight = 0.5 + 10.5 * growth01;
-
-  // EverRoot IS the tree — it is the monument, not scenery. The whole scene is
-  // composed around it, so the tree is rendered at hero scale and never reads as
-  // a twig even for a young account. HERO enlarges the whole tree; the floor
-  // keeps a real (non-seed) tree grand. A true seed still starts small so the
-  // cinematic birth sequence can grow it. Every camera/fog/shadow/environment
-  // dimension downstream is derived from this height, so the framing stays
-  // consistent at any size.
-  const isSeedState = memoryCount === 0 && score < 12;
   const HERO = 2.6;
-  const trunkHeight = (isSeedState ? baseHeight : Math.max(baseHeight, 3.0)) * HERO;
+  const baseHeight = 0.5 + 10.5 * growth01;
+  const trunkHeight = baseHeight * HERO;
 
-  // Girth: proportional to height (always gorgeous) plus a subtle thickening
-  // from total memory volume — "every memory adds a ring to the trunk."
-  const girth01 = saturate(memoryCount, 55);
+  // Girth kept proportional to height (never top-heavy or spindly).
   const trunkRadiusBottom = trunkHeight * 0.085 + girth01 * 0.08;
   // 0.7 was the old fully-grown base radius; normalising against it keeps the
-  // hand-tuned branch proportions intact and scales limbs up/down from there.
+  // hand-tuned branch proportions intact.
   const girthScale = Math.max(0.28, trunkRadiusBottom / 0.7);
   const trunkRadiusTop = 0.19 * girthScale;
 
-  // Canopy fullness rises with remembered moments and how many life-themes
-  // (branches) the tree carries; a busier life wears a lusher, wider crown.
-  const crownFullness = 0.35 + 0.65 * saturate(memoryCount + branchCount * 4, 70);
-  let crownRadius = trunkHeight * 0.66 + crownFullness * 0.6;
-  // A dense, layered crown — the tree should read as full and deep, not sparse.
-  // Density is capped high (instanced, so thousands of leaves stay cheap) and
-  // scaled to the crown area so a bigger crown fills in proportionally.
-  let crownCount = Math.round(
+  // A dense, layered crown — full and deep. (The hero GLB brings its own
+  // foliage; these values still feed layout positioning.)
+  const crownFullness = 0.35 + 0.65 * fullness01;
+  const crownRadius = trunkHeight * 0.66 + crownFullness * 0.6;
+  const crownCount = Math.round(
     Math.min(6000, 34 * crownRadius * crownRadius * (0.4 + 0.6 * crownFullness)),
   );
-  // A true seed (no memories, essentially no score) stays a seed in the soil —
-  // the cinematic birth sequence owns that moment, so no crown yet.
-  if (memoryCount === 0 && score < 12) {
-    crownRadius = 0;
-    crownCount = 0;
-  }
 
   return {
     trunkHeight,

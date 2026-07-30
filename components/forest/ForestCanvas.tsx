@@ -193,6 +193,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   "Biggest Wins": "#ffd54a",
   "Biggest Mistakes": "#9aa2b4",
   "Messages for Future Generations": "#fff4c0",
+  "Moments & Memories": "#ffc2a6",
   Tributes: "#ffc2a6",
 };
 

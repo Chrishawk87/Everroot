@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { NodeKind, EdgeKind, LifeEpoch, Prisma } from "@prisma/client";
 import { bindPersonToUser } from "@/lib/family-links";
+import { CATEGORIES } from "@/lib/forest/categories";
 
 /**
  * TREE GROWTH ENGINE
@@ -371,8 +372,63 @@ export async function plantSeed(
       userId,
       kind: "SEED",
       title: `${displayName}'s Seed`,
-      summary: "Untold potential. Every story told will grow this into a tree.",
+      summary: "The heart of this legacy. Every story told fills its lanterns.",
       score: 1,
     },
+  });
+
+  // The tree stands mature from the very first day, carrying all ten category
+  // lanterns from the start. So every new forest is planted with its full set
+  // of category branches (each branch renders as one lantern), ready to hold
+  // memories the moment the account is created.
+  await ensureCategoryBranches(userId);
+}
+
+/**
+ * Ensure a forest has its trunk and all ten category branches. Idempotent:
+ * existing branches are left in place (and given their blurb if missing), so
+ * this is safe to run at signup and again to backfill older accounts. Every
+ * category branch renders as one lantern on the mature tree.
+ */
+export async function ensureCategoryBranches(userId: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    // A forest should always have a seed, but tolerate an older one that never
+    // got seeded rather than throwing.
+    let seed = await tx.forestNode.findFirst({ where: { userId, kind: "SEED" } });
+    if (!seed) {
+      seed = await tx.forestNode.create({
+        data: {
+          userId,
+          kind: "SEED",
+          title: "Seed",
+          summary: "The heart of this legacy. Every story told fills its lanterns.",
+          score: 1,
+        },
+      });
+    }
+
+    const trunk = await ensureTrunk(tx, userId, seed.id);
+
+    for (const cat of CATEGORIES) {
+      const existing = await tx.forestNode.findFirst({
+        where: { userId, kind: "BRANCH", title: cat.title },
+      });
+      if (existing) {
+        // Fill in the drawer blurb if an older branch didn't have one.
+        if (!existing.summary && cat.blurb) {
+          await tx.forestNode.update({
+            where: { id: existing.id },
+            data: { summary: cat.blurb },
+          });
+        }
+        continue;
+      }
+      const branch = await tx.forestNode.create({
+        data: { userId, kind: "BRANCH", title: cat.title, summary: cat.blurb, score: 2 },
+      });
+      await tx.forestEdge.create({
+        data: { userId, kind: "CONTAINS", fromNodeId: trunk.id, toNodeId: branch.id },
+      });
+    }
   });
 }

@@ -31,13 +31,6 @@ const ForestIntro = dynamic(() => import("./ForestIntro"), { ssr: false });
 
 const INTRO_SEEN_KEY = "everroot_intro_seen";
 
-const NEXT_STAGE_LABEL: Record<string, { min: number; label: string } | null> = Object.fromEntries(
-  GROWTH_STAGES.map((s, i) => [
-    s.stage,
-    GROWTH_STAGES[i + 1] ? { min: GROWTH_STAGES[i + 1].minScore, label: GROWTH_STAGES[i + 1].label } : null,
-  ]),
-);
-
 // How each freshly grown object announces itself.
 const GREW_VERB: Record<string, string> = {
   LEAF: "A new leaf unfurled",
@@ -131,8 +124,6 @@ export default function ForestExperience({
     router.refresh();
   }, [router]);
 
-  const stageMeta = GROWTH_STAGES.find((s) => s.stage === graph.stage);
-  const next = NEXT_STAGE_LABEL[graph.stage];
   const memoryCount =
     graph.counts.LEAF + graph.counts.FLOWER + graph.counts.FRUIT + graph.counts.MEMORY_MOMENT + graph.counts.PHOTO;
 
@@ -293,7 +284,7 @@ export default function ForestExperience({
                 <LegacyRing pct={legacyPct} />
                 <div className="min-w-0 flex-1">
                   <p className="font-serif text-lg leading-tight text-parchment">
-                    {greeting}, {firstName} 🌱
+                    {greeting}, {firstName} 🌳
                   </p>
                   <p className="mt-0.5 text-xs italic leading-snug text-parchment/55">
                     The roots of today build the branches of tomorrow.
@@ -316,12 +307,14 @@ export default function ForestExperience({
                 ))}
               </div>
               <p className="mt-2.5 text-center text-[11px] text-parchment/45">
-                <span className="text-fruit">{stageMeta?.label ?? graph.stage}</span>
-                {next
-                  ? next.min - graph.legacyScore > 0
-                    ? ` · ${next.min - graph.legacyScore} more to reach ${next.label}`
-                    : ` · Ready to become ${next.label}`
-                  : " · Fully grown — an ancient legacy"}
+                {memoryCount > 0 ? (
+                  <>
+                    <span className="text-fruit">{memoryCount}</span>
+                    {` ${memoryCount === 1 ? "memory" : "memories"} held in your lanterns`}
+                  </>
+                ) : (
+                  "Your lanterns are waiting for their first memory"
+                )}
               </p>
             </div>
           ) : (
