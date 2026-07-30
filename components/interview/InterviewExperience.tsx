@@ -117,6 +117,12 @@ export default function InterviewExperience({
   const bytesRef = useRef(0);
   // Human-readable reason the mic is unavailable, so the person knows what to fix.
   const [micReason, setMicReason] = useState("");
+  // Whether the interviewer's voice may auto-play. On mobile, the spoken voice
+  // (speechSynthesis) holds the device audio session in "playback" and starves
+  // the recorder, so answers save as 0 KB. Recording must win the mic there, so
+  // we never auto-speak on mobile — the person can still tap the speaker icon to
+  // hear a question. Desktop keeps the fully spoken experience.
+  const autoSpeakRef = useRef(true);
 
   // Recording machinery.
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -158,8 +164,11 @@ export default function InterviewExperience({
     const recog = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     // Android's recognizer steals the mic from the recorder, so only transcribe
     // live when we're NOT also recording audio there.
-    const contendsForMic = /Android/i.test(navigator.userAgent);
-    setLiveTranscribe(recog && !(audioOk && contendsForMic));
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    setLiveTranscribe(recog && !(audioOk && isMobile));
+    // Recording wins over playback on mobile: never auto-speak there, so the
+    // spoken interviewer voice can't hold the audio session away from the mic.
+    autoSpeakRef.current = !(audioOk && isMobile);
     if (!secure) {
       setMicReason(
         "This page isn't on a secure (https) connection, so the browser blocks the microphone. Open the site using its https:// web address.",
@@ -230,6 +239,20 @@ export default function InterviewExperience({
   }, []);
 
   const speak = useCallback((text: string) => speakSequence([text]), [speakSequence]);
+
+  // Automatic (unprompted) interviewer speech. Suppressed on mobile so it never
+  // competes with the mic; the onDone callback still fires so flows that resume
+  // recording after a line keep working.
+  const maybeSpeak = useCallback(
+    (lines: string[], onDone?: () => void) => {
+      if (!autoSpeakRef.current) {
+        onDone?.();
+        return;
+      }
+      speakSequence(lines, onDone);
+    },
+    [speakSequence],
+  );
 
   const stopSpeaking = useCallback(() => {
     try {
@@ -477,7 +500,7 @@ export default function InterviewExperience({
       resetAnswer();
       setError(null);
       if (index >= ALL_QUESTIONS.length) {
-        speakSequence(ackLine ? [ackLine] : []);
+        maybeSpeak(ackLine ? [ackLine] : []);
         setPhase("done");
         return;
       }
@@ -490,9 +513,9 @@ export default function InterviewExperience({
       const lines = [ackLine, chapterChanged ? ch?.intro : undefined, q.prompt].filter(
         (l): l is string => !!l,
       );
-      setTimeout(() => speakSequence(lines), 300);
+      setTimeout(() => maybeSpeak(lines), 300);
     },
-    [resetAnswer, speakSequence],
+    [resetAnswer, maybeSpeak],
   );
 
   const beginInterview = useCallback(() => {
@@ -510,7 +533,7 @@ export default function InterviewExperience({
     prevChapterRef.current = null;
     if (noteMode) {
       setPhase("idle");
-      setTimeout(() => speak(FREE_NOTE_QUESTION.prompt), 300);
+      setTimeout(() => maybeSpeak([FREE_NOTE_QUESTION.prompt]), 300);
     } else {
       goToQuestion(startIndex);
     }
@@ -521,16 +544,16 @@ export default function InterviewExperience({
   const askFollowUp = useCallback(() => {
     setError(null);
     const line = pickFollowUp();
-    speakSequence([line], () => {
+    maybeSpeak([line], () => {
       if (canRecordAudio || canRecognize) resumeOrStart();
     });
-  }, [pickFollowUp, speakSequence, canRecordAudio, canRecognize, resumeOrStart]);
+  }, [pickFollowUp, maybeSpeak, canRecordAudio, canRecognize, resumeOrStart]);
 
   const startOver = useCallback(() => {
     resetAnswer();
     setPhase("idle");
-    if (question) setTimeout(() => speak(question.prompt), 200);
-  }, [resetAnswer, question, speak]);
+    if (question) setTimeout(() => maybeSpeak([question.prompt]), 200);
+  }, [resetAnswer, question, maybeSpeak]);
 
   const saveAnswer = useCallback(async () => {
     if (!question) return;
@@ -599,7 +622,7 @@ export default function InterviewExperience({
 
       if (noteMode) {
         // A free-form note is a single memory — go straight to the closing card.
-        speakSequence([pickAck()]);
+        maybeSpeak([pickAck()]);
         setPhase("done");
       } else {
         goToQuestion(qi + 1, pickAck());
@@ -608,7 +631,7 @@ export default function InterviewExperience({
       setError(e instanceof Error ? e.message : "Something went wrong saving that.");
       setPhase("review");
     }
-  }, [question, transcript, hasRecorded, phase, finalizeRecording, goToQuestion, qi, pickAck, roster, selectedKeys, noteMode, speakSequence]);
+  }, [question, transcript, hasRecorded, phase, finalizeRecording, goToQuestion, qi, pickAck, roster, selectedKeys, noteMode, maybeSpeak]);
 
   // Rotate the patience line while recording.
   useEffect(() => {
