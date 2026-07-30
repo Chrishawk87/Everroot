@@ -117,6 +117,13 @@ export default function InterviewExperience({
   const bytesRef = useRef(0);
   // Human-readable reason the mic is unavailable, so the person knows what to fix.
   const [micReason, setMicReason] = useState("");
+  // On-screen diagnostics so we can see exactly where mobile capture breaks
+  // (secure context, mic permission, chosen format, recorder/recognition state)
+  // without needing a desktop debugger attached to the phone.
+  const [diag, setDiag] = useState<Record<string, string>>({});
+  const logDiag = useCallback((patch: Record<string, string>) => {
+    setDiag((d) => ({ ...d, ...patch }));
+  }, []);
   // Whether the interviewer's voice may auto-play. On mobile, the spoken voice
   // (speechSynthesis) holds the device audio session in "playback" and starves
   // the recorder, so answers save as 0 KB. Recording must win the mic there, so
@@ -169,6 +176,20 @@ export default function InterviewExperience({
     // Recording wins over playback on mobile: never auto-speak there, so the
     // spoken interviewer voice can't hold the audio session away from the mic.
     autoSpeakRef.current = !(audioOk && isMobile);
+    logDiag({
+      secure: secure ? "yes" : "NO",
+      mediaRecorder: hasMR ? "yes" : "NO",
+      getUserMedia: hasGUM ? "yes" : "NO",
+      speechRecognition: recog ? "yes" : "no",
+      mobile: isMobile ? "yes" : "no",
+      standalone:
+        typeof navigator !== "undefined" &&
+        (navigator as unknown as { standalone?: boolean }).standalone
+          ? "yes (added to home screen)"
+          : "no",
+      pickedFormat: audioOk ? pickMimeType() || "(browser default)" : "n/a",
+      mic: "not requested yet",
+    });
     if (!secure) {
       setMicReason(
         "This page isn't on a secure (https) connection, so the browser blocks the microphone. Open the site using its https:// web address.",
@@ -359,9 +380,19 @@ export default function InterviewExperience({
 
     if (canRecordAudio) {
       try {
+        logDiag({ mic: "requesting…" });
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         streamRef.current = stream;
         chunksRef.current = [];
+        const tracks = stream.getAudioTracks();
+        logDiag({
+          mic: "granted",
+          micTrack: tracks.length
+            ? `${tracks[0].label || "unnamed"} · ${tracks[0].readyState} · ${
+                tracks[0].enabled ? "enabled" : "DISABLED"
+              } · ${tracks[0].muted ? "MUTED" : "unmuted"}`
+            : "no track!",
+        });
         const mimeType = pickMimeType();
         const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
         recorder.ondataavailable = (ev) => {
@@ -369,15 +400,25 @@ export default function InterviewExperience({
             chunksRef.current.push(ev.data);
             bytesRef.current += ev.data.size;
             setCapturedKb(Math.round(bytesRef.current / 1024));
+            logDiag({ chunks: `${chunksRef.current.length} · ${Math.round(bytesRef.current / 1024)} KB` });
+          } else {
+            logDiag({ lastChunk: "empty (0 bytes)" });
           }
         };
+        recorder.onerror = (ev) => {
+          const e = (ev as unknown as { error?: { name?: string } }).error;
+          logDiag({ recorderError: e?.name || "unknown" });
+        };
+        recorder.onstart = () => logDiag({ recorderState: "recording" });
         recorderRef.current = recorder;
         // Timeslice: flush a chunk every second. Without this, some mobile
         // browsers (notably iOS Safari) buffer everything and can hand back an
         // empty blob on stop — so recordings silently failed to save.
         recorder.start(1000);
+        logDiag({ usedFormat: recorder.mimeType || mimeType || "(default)" });
       } catch (err) {
         const name = err instanceof Error ? err.name : "unknown error";
+        logDiag({ mic: `FAILED: ${name}` });
         let why = "Please try again.";
         if (name === "NotAllowedError") {
           why =
@@ -931,6 +972,22 @@ export default function InterviewExperience({
                   ? "Your voice is being recorded and saved. Live word-by-word text isn't shown on this device, but you can type notes above anytime."
                   : "Live voice-to-text isn't supported in this browser, so type your answer above. For the full experience, try Chrome."}
               </p>
+            ) : null}
+
+            {/* Temporary on-screen diagnostics — screenshot this while testing so
+                we can see exactly where mobile capture breaks, then remove it. */}
+            {Object.keys(diag).length ? (
+              <details className="mt-6 rounded-lg border border-parchment/15 bg-black/40 p-3 text-[11px] text-parchment/60">
+                <summary className="cursor-pointer text-parchment/70">Recording diagnostics (tap to expand)</summary>
+                <dl className="mt-2 space-y-0.5 font-mono">
+                  {Object.entries(diag).map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-3">
+                      <dt className="text-parchment/45">{k}</dt>
+                      <dd className="text-right text-parchment/80">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </details>
             ) : null}
           </>
         )}
