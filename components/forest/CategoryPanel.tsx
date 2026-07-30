@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { SyntheticEvent } from "react";
 
 interface CategoryItem {
   nodeId: string;
@@ -36,6 +37,31 @@ function fmtDate(iso: string): string {
  * memory hanging off that branch, with its voice memo, video, photo, and
  * written words. Access is gated server-side (owner + linked family only).
  */
+// Temporary: when an <audio>/<video> fails, probe the stream URL directly and
+// report what actually came back, so we can tell a storage/auth problem
+// (bad HTTP status) apart from a codec/decode problem (loads but won't play).
+async function describePlaybackFailure(
+  recordingId: string,
+  mediaErrorCode: number | undefined,
+): Promise<string> {
+  const codeLabel =
+    { 1: "aborted", 2: "network", 3: "decode/format", 4: "source not supported" }[
+      mediaErrorCode ?? 0
+    ] ?? "unknown";
+  try {
+    const res = await fetch(`/api/recordings/${recordingId}`, {
+      headers: { Range: "bytes=0-1" },
+    });
+    const len = res.headers.get("content-range") || res.headers.get("content-length") || "?";
+    const type = res.headers.get("content-type") || "?";
+    return `Playback failed (${codeLabel}). Server: HTTP ${res.status}, type ${type}, size ${len}.`;
+  } catch (e) {
+    return `Playback failed (${codeLabel}). Couldn't even reach the file: ${
+      e instanceof Error ? e.message : "network error"
+    }.`;
+  }
+}
+
 export default function CategoryPanel({
   branchId,
   branchTitle,
@@ -47,6 +73,7 @@ export default function CategoryPanel({
 }) {
   const [contents, setContents] = useState<Contents | null>(null);
   const [loading, setLoading] = useState(false);
+  const [playbackErrors, setPlaybackErrors] = useState<Record<string, string>>({});
 
   const load = useCallback(() => {
     setLoading(true);
@@ -114,15 +141,42 @@ export default function CategoryPanel({
 
                   {/* Video or voice recording */}
                   {it.recordingId ? (
-                    it.isVideo ? (
-                      <video
-                        controls
-                        src={`/api/recordings/${it.recordingId}`}
-                        className="mt-3 w-full rounded-xl"
-                      />
-                    ) : (
-                      <audio controls src={`/api/recordings/${it.recordingId}`} className="mt-3 w-full" />
-                    )
+                    (() => {
+                      const rid = it.recordingId;
+                      const onErr = async (
+                        e: SyntheticEvent<HTMLMediaElement>,
+                      ) => {
+                        const msg = await describePlaybackFailure(
+                          rid,
+                          e.currentTarget.error?.code,
+                        );
+                        setPlaybackErrors((prev) => ({ ...prev, [rid]: msg }));
+                      };
+                      return (
+                        <>
+                          {it.isVideo ? (
+                            <video
+                              controls
+                              src={`/api/recordings/${rid}`}
+                              onError={onErr}
+                              className="mt-3 w-full rounded-xl"
+                            />
+                          ) : (
+                            <audio
+                              controls
+                              src={`/api/recordings/${rid}`}
+                              onError={onErr}
+                              className="mt-3 w-full"
+                            />
+                          )}
+                          {playbackErrors[rid] ? (
+                            <p className="mt-2 rounded-lg border border-amber-400/30 bg-black/40 p-2 font-mono text-[11px] text-amber-300/90">
+                              {playbackErrors[rid]}
+                            </p>
+                          ) : null}
+                        </>
+                      );
+                    })()
                   ) : null}
 
                   {/* Written words — transcript preferred, else the summary */}
