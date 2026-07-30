@@ -122,12 +122,20 @@ export async function POST(req: Request) {
 
     // Prefer object storage (R2). If it's configured, upload the audio there and
     // store only the key in Postgres; the raw bytes stay out of the database.
-    // If R2 isn't configured, fall back to storing bytes in the DB as before.
+    // If R2 isn't configured — OR the upload fails (bad/missing credentials,
+    // network) — fall back to storing bytes in the DB. The recording must never
+    // be lost just because object storage is unavailable, so an R2 failure is
+    // logged but not fatal: we keep the audio in Postgres instead.
     let storageKey: string | null = null;
     if (storageConfigured()) {
-      const key = newRecordingKey();
-      await putRecording(key, bytes, mimeType);
-      storageKey = key;
+      try {
+        const key = newRecordingKey();
+        await putRecording(key, bytes, mimeType);
+        storageKey = key;
+      } catch (e) {
+        console.error("R2 upload failed — storing recording bytes in DB instead:", e);
+        storageKey = null;
+      }
     }
 
     const rec = await recordings().create({

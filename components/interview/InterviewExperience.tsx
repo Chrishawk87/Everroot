@@ -658,6 +658,9 @@ export default function InterviewExperience({
       if (blob && blob.size > 0) {
         const ext = (blob.type.split("/")[1] || "webm").split(";")[0];
         fd.append("audio", blob, `answer.${ext}`);
+        logDiag({ saveBlob: `${Math.round(blob.size / 1024)} KB (${blob.type || "?"})` });
+      } else {
+        logDiag({ saveBlob: "EMPTY — no audio sent to server" });
       }
 
       // The people the person tapped as part of this story.
@@ -675,6 +678,11 @@ export default function InterviewExperience({
 
       const res = await fetch("/api/interview/answer", { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
+      logDiag({
+        saveResult: res.ok
+          ? `saved — recordingId: ${data.recordingId ?? "NONE (no audio row created)"}`
+          : `server error ${res.status}: ${data.error ?? "unknown"}`,
+      });
       if (!res.ok) {
         throw new Error(data.error || "Something went wrong saving that.");
       }
@@ -703,7 +711,7 @@ export default function InterviewExperience({
       setError(e instanceof Error ? e.message : "Something went wrong saving that.");
       setPhase("review");
     }
-  }, [question, transcript, hasRecorded, phase, finalizeRecording, goToQuestion, qi, pickAck, roster, selectedKeys, noteMode, maybeSpeak]);
+  }, [question, transcript, hasRecorded, phase, finalizeRecording, goToQuestion, qi, pickAck, roster, selectedKeys, noteMode, maybeSpeak, logDiag]);
 
   // Rotate the patience line while recording.
   useEffect(() => {
