@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, SyntheticEvent } from "react";
+import MemorySocial from "./MemorySocial";
 
 interface CategoryItem {
   nodeId: string;
@@ -398,6 +399,7 @@ export default function CategoryPanel({
                       {it.summary}
                     </p>
                   ) : null}
+                  <MemorySocial nodeId={it.nodeId} />
                 </li>
               ))}
             </ul>

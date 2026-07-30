@@ -13,6 +13,7 @@ import ShareClipButton, { isClipKind } from "./ShareClipButton";
 import StoryFeedPlayer from "./StoryFeedPlayer";
 import CapsulePanel from "./CapsulePanel";
 import CategoryPanel from "./CategoryPanel";
+import MemorySocial from "./MemorySocial";
 import GuardianPanel, { type FamilyOption } from "./GuardianPanel";
 import { signOutAction } from "@/app/actions/forest";
 import { INTERVIEW } from "@/lib/interview/script";
@@ -30,6 +31,17 @@ const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
 const ForestIntro = dynamic(() => import("./ForestIntro"), { ssr: false });
 
 const INTRO_SEEN_KEY = "everroot_intro_seen";
+
+// Memory kinds that family can react to and comment on — the moments of a life,
+// not structural or family nodes.
+const COMMENTABLE_KINDS = new Set([
+  "LEAF",
+  "FLOWER",
+  "FRUIT",
+  "PHOTO",
+  "MEMORY",
+  "MEMORY_MOMENT",
+]);
 
 // How each freshly grown object announces itself.
 const GREW_VERB: Record<string, string> = {
@@ -246,7 +258,7 @@ export default function ForestExperience({
       {selected && selected.kind !== "BRANCH" && selected.kind !== "SUB_BRANCH" ? (
         <div className="absolute inset-x-0 bottom-0 z-40">
           <div className="absolute inset-0 -top-[100vh]" onClick={() => setSelected(null)} />
-          <div className="relative mx-auto w-full max-w-md animate-[sheetUp_0.28s_ease-out] rounded-t-3xl border-t border-parchment/15 bg-[#0b1710]/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl">
+          <div className="relative mx-auto max-h-[85vh] w-full max-w-md animate-[sheetUp_0.28s_ease-out] overflow-y-auto rounded-t-3xl border-t border-parchment/15 bg-[#0b1710]/95 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-xl">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-parchment/25" />
             <p className="text-xs uppercase tracking-widest text-canopy-light">
               {selected.kind.replace(/_/g, " ")}
@@ -262,6 +274,7 @@ export default function ForestExperience({
               {selected.kind === "PERSON" ? <InviteButton person={selected} /> : null}
               {isClipKind(selected.kind) ? <ShareClipButton node={selected} /> : null}
             </div>
+            {COMMENTABLE_KINDS.has(selected.kind) ? <MemorySocial nodeId={selected.id} /> : null}
             <button
               onClick={() => setSelected(null)}
               className="mt-4 w-full rounded-xl border border-parchment/20 py-2.5 text-sm text-parchment/70 transition active:scale-[0.98]"

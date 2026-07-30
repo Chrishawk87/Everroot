@@ -27,6 +27,8 @@ model User {
   nodes        ForestNode[]
   edges        ForestEdge[]
   recordings   Recording[]
+  reactions    Reaction[]
+  comments     Comment[]
 
   // Invites this user has sent to bring family members into the forest.
   sentInvites  Invite[]     @relation("SentInvites")
@@ -206,6 +208,8 @@ model ForestNode {
   edgesTo   ForestEdge[] @relation("EdgeTo")
 
   recordings Recording[]
+  reactions  Reaction[]
+  comments   Comment[]
 
   @@index([userId])
   @@index([userId, kind])
@@ -234,6 +238,42 @@ model Recording {
   @@index([userId])
   @@index([nodeId])
   @@map("recordings")
+}
+
+// A family member's reaction to a memory — a single emoji, Facebook-style. Each
+// person gets at most one reaction per memory (they can change or clear it), so
+// (nodeId, userId) is unique. Counts are aggregated across the family.
+model Reaction {
+  id        String   @id @default(cuid())
+  nodeId    String   // the memory (ForestNode) being reacted to
+  userId    String   // the family member reacting
+  emoji     String   // e.g. "❤️", "😂", "😢", "🙏", "👏"
+  createdAt DateTime @default(now())
+
+  node      ForestNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, userId])
+  @@index([nodeId])
+  @@map("reactions")
+}
+
+// A family member's comment on a memory. A comment can carry text, a photo/video
+// reply (stored as a Recording, like any other media), or both. recordingId
+// points at that media when present.
+model Comment {
+  id          String   @id @default(cuid())
+  nodeId      String   // the memory (ForestNode) being commented on
+  authorId    String   // the family member who wrote it
+  body        String?  @db.Text
+  recordingId String?  // optional photo/video/voice reply, stored as a Recording
+  createdAt   DateTime @default(now())
+
+  node        ForestNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  author      User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([nodeId])
+  @@map("comments")
 }
 
 // How nodes connect. CONTAINS builds the tree hierarchy (trunk contains branch,
