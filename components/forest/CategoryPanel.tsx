@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { SyntheticEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent, SyntheticEvent } from "react";
 
 interface CategoryItem {
   nodeId: string;
@@ -26,6 +26,7 @@ interface Contents {
   ownerId: string;
   items: CategoryItem[];
   canView: boolean;
+  canEdit: boolean;
 }
 
 function fmtDate(iso: string): string {
@@ -74,6 +75,11 @@ export default function CategoryPanel({
   const [contents, setContents] = useState<Contents | null>(null);
   const [loading, setLoading] = useState(false);
   const [playbackErrors, setPlaybackErrors] = useState<Record<string, string>>({});
+  const [caption, setCaption] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -87,6 +93,41 @@ export default function CategoryPanel({
   useEffect(() => {
     load();
   }, [load]);
+
+  // Upload a chosen photo/video, then refresh the drawer so it appears.
+  const upload = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setUploadError(null);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        if (caption.trim()) fd.append("caption", caption.trim());
+        const res = await fetch(`/api/category/${branchId}/media`, {
+          method: "POST",
+          body: fd,
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(data.error || "We couldn't add that just now.");
+        setCaption("");
+        load();
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "We couldn't add that just now.");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [branchId, caption, load],
+  );
+
+  const onPick = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ""; // let the same file be picked again later
+      if (file) void upload(file);
+    },
+    [upload],
+  );
 
   const items = contents?.items ?? [];
 
@@ -112,11 +153,66 @@ export default function CategoryPanel({
             <p className="py-8 text-center text-sm text-parchment/60">
               These memories are private to their family.
             </p>
-          ) : items.length === 0 ? (
-            <p className="py-6 text-center text-sm text-parchment/60">
-              Nothing has been added to this branch yet.
-            </p>
           ) : (
+          <>
+            {/* Add a photo or video — only the owner of this tree sees this. */}
+            {contents.canEdit ? (
+              <div className="mb-5 rounded-2xl border border-canopy/30 bg-black/20 p-4">
+                <p className="mb-2.5 text-sm text-parchment/80">Add a photo or short video</p>
+                <input
+                  ref={libraryInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={onPick}
+                />
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={onPick}
+                />
+                <input
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="Add a caption (optional)"
+                  maxLength={200}
+                  className="mb-3 w-full rounded-lg border border-parchment/15 bg-black/30 px-3 py-2 text-sm text-parchment placeholder:text-parchment/30 focus:border-canopy/50 focus:outline-none"
+                />
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    onClick={() => libraryInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex-1 rounded-full border border-parchment/20 bg-black/30 px-4 py-2 text-sm text-parchment/85 transition hover:border-parchment/50 hover:text-parchment disabled:opacity-50"
+                  >
+                    Choose from library
+                  </button>
+                  <button
+                    onClick={() => cameraInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex-1 rounded-full border border-fruit/40 bg-black/40 px-4 py-2 text-sm text-parchment transition hover:border-fruit/70 hover:brightness-110 disabled:opacity-50"
+                  >
+                    Take photo or video
+                  </button>
+                </div>
+                {uploading ? (
+                  <p className="mt-2.5 text-xs text-parchment/60">Adding your memory…</p>
+                ) : null}
+                {uploadError ? (
+                  <p className="mt-2.5 text-xs text-amber-300/90">{uploadError}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {items.length === 0 ? (
+              <p className="py-6 text-center text-sm text-parchment/60">
+                {contents.canEdit
+                  ? "Nothing here yet — add your first photo, video, or recorded memory."
+                  : "Nothing has been added to this branch yet."}
+              </p>
+            ) : (
             <ul className="space-y-4">
               {items.map((it) => (
                 <li key={it.nodeId} className="rounded-2xl border border-parchment/10 bg-black/30 p-4">
@@ -139,10 +235,11 @@ export default function CategoryPanel({
                     />
                   ) : null}
 
-                  {/* Video or voice recording */}
+                  {/* Photo, video, or voice recording (all streamed the same way) */}
                   {it.recordingId ? (
                     (() => {
                       const rid = it.recordingId;
+                      const isImage = it.mimeType?.startsWith("image") ?? false;
                       const onErr = async (
                         e: SyntheticEvent<HTMLMediaElement>,
                       ) => {
@@ -154,7 +251,14 @@ export default function CategoryPanel({
                       };
                       return (
                         <>
-                          {it.isVideo ? (
+                          {isImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={`/api/recordings/${rid}`}
+                              alt={it.title}
+                              className="mt-3 max-h-72 w-full rounded-xl object-cover"
+                            />
+                          ) : it.isVideo ? (
                             <video
                               controls
                               src={`/api/recordings/${rid}`}
@@ -192,6 +296,8 @@ export default function CategoryPanel({
                 </li>
               ))}
             </ul>
+            )}
+          </>
           )}
         </div>
       </div>

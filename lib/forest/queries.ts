@@ -511,6 +511,8 @@ export interface CategoryContents {
   ownerId: string;
   items: CategoryItem[];
   canView: boolean;
+  // True when the viewer owns this lantern, so the UI can offer "add a memory".
+  canEdit: boolean;
 }
 
 // Branch kinds whose lanterns open a category drawer.
@@ -550,6 +552,7 @@ export async function getCategoryContents(
     ownerId,
     items: [],
     canView: false,
+    canEdit: viewerId === ownerId,
   };
 
   const allowed = await isLinkedFamily(viewerId, ownerId);
