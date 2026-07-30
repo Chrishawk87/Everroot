@@ -124,6 +124,16 @@ export default function InterviewExperience({
   const logDiag = useCallback((patch: Record<string, string>) => {
     setDiag((d) => ({ ...d, ...patch }));
   }, []);
+  // A local (in-browser) playback URL of what was just captured, so the person
+  // can immediately hear their recording before it's uploaded — proving the mic
+  // caught real sound, independent of storage/streaming.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const setPreview = useCallback((url: string | null) => {
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+  }, []);
   // Whether the interviewer's voice may auto-play. On mobile, the spoken voice
   // (speechSynthesis) holds the device audio session in "playback" and starves
   // the recorder, so answers save as 0 KB. Recording must win the mic there, so
@@ -438,6 +448,7 @@ export default function InterviewExperience({
 
   // Resume the same recording (after a follow-up) or start one if none exists.
   const resumeOrStart = useCallback(() => {
+    setPreview(null);
     const rec = recorderRef.current;
     if (rec && rec.state === "paused") {
       committedRef.current = transcript ? transcript.trimEnd() + " " : "";
@@ -451,7 +462,7 @@ export default function InterviewExperience({
     } else {
       void startRecording();
     }
-  }, [transcript, beginSegment, startRecording]);
+  }, [transcript, beginSegment, startRecording, setPreview]);
 
   // Pause (the "Stop" affordance) — keeps the session so we can continue.
   const pauseRecording = useCallback(() => {
@@ -459,6 +470,12 @@ export default function InterviewExperience({
     stopRecognition();
     const rec = recorderRef.current;
     if (rec && rec.state === "recording") {
+      // Flush the final buffered second so the preview isn't missing the tail.
+      try {
+        rec.requestData();
+      } catch {
+        /* ignore */
+      }
       try {
         rec.pause();
       } catch {
@@ -467,7 +484,20 @@ export default function InterviewExperience({
     }
     setHasRecorded(true);
     setPhase("review");
-  }, [stopRecognition]);
+    // Build a local preview from the chunks captured so far, so the person can
+    // hear exactly what the mic caught before saving. Slight delay lets the
+    // requestData() flush above land in chunksRef first.
+    const type = rec?.mimeType || pickMimeType() || "audio/webm";
+    setTimeout(() => {
+      if (chunksRef.current.length) {
+        const blob = new Blob(chunksRef.current, { type });
+        logDiag({ previewSize: `${Math.round(blob.size / 1024)} KB` });
+        setPreview(URL.createObjectURL(blob));
+      } else {
+        logDiag({ previewSize: "no chunks to preview" });
+      }
+    }, 250);
+  }, [stopRecognition, logDiag, setPreview]);
 
   // Finalize into a single blob for saving.
   const finalizeRecording = useCallback(
@@ -518,10 +548,11 @@ export default function InterviewExperience({
     committedRef.current = "";
     setTranscript("");
     setHasRecorded(false);
+    setPreview(null);
     setSelectedKeys(new Set());
     setNewName("");
     setNewRel("");
-  }, [hardStopRecording]);
+  }, [hardStopRecording, setPreview]);
 
   const pickAck = useCallback(() => {
     const v = ACKNOWLEDGMENTS[ackIdxRef.current % ACKNOWLEDGMENTS.length];
@@ -964,6 +995,22 @@ export default function InterviewExperience({
                     ? "Waiting for audio from your mic… if this stays at 0 KB, your device isn't sending audio."
                     : "No audio was captured this time — try recording again, or type your answer."}
               </p>
+            ) : null}
+
+            {/* Local playback of what was just captured — proves the mic caught
+                real sound before anything is uploaded. */}
+            {previewUrl && phase === "review" ? (
+              <div className="mt-4 rounded-xl border border-canopy/30 bg-black/30 p-3">
+                <p className="mb-2 text-xs text-parchment/70">
+                  Here's what I just recorded — press play to hear it:
+                </p>
+                <audio
+                  controls
+                  src={previewUrl}
+                  className="w-full"
+                  onError={() => logDiag({ preview: "local playback FAILED to load" })}
+                />
+              </div>
             ) : null}
 
             {!liveTranscribe ? (
