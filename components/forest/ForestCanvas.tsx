@@ -2678,6 +2678,12 @@ function NodeGlyph({
 
   const color = overrideColor ?? COLORS[node.kind] ?? "#9ad0b0";
   const isMemory = MEMORY_KINDS.has(node.kind);
+  // A photo/video the owner chose to hang out on the tree carries an on-device
+  // thumbnail in its data payload; render it as a framed photo instead of a leaf.
+  const thumb = typeof node.data?.thumb === "string" ? (node.data.thumb as string) : undefined;
+  const framed = isMemory && node.data?.onTree === true && !!thumb;
+  const isVideoMemory = node.data?.mediaType === "video";
+  const thumbTex = useThumbTexture(framed ? thumb : undefined);
   // Family (PERSON) and heritage (ROOT) live underground; their names surface
   // when the camera tilts below the earth, so they carry a persistent label too.
   const isRootWorld = node.kind === "PERSON" || node.kind === "ROOT";
@@ -2704,7 +2710,11 @@ function NodeGlyph({
         onSelect(node);
       }}
     >
-      <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew || selected} categorized={!!overrideColor} leafTex={leafTex} seed={hash01(node.id, 9)} />
+      {framed && thumbTex ? (
+        <FramedPhoto scale={scale} texture={thumbTex} isVideo={isVideoMemory} selected={selected} />
+      ) : (
+        <Geometry kind={node.kind} scale={scale} color={color} glow={justGrew || selected} categorized={!!overrideColor} leafTex={leafTex} seed={hash01(node.id, 9)} />
+      )}
       {justGrew ? <GrowthBurst scale={scale} /> : null}
 
       {/* Bloom-on-touch: a warm glowing halo opens around the chosen memory. */}
@@ -2758,6 +2768,96 @@ function GrowthBurst({ scale }: { scale: number }) {
       <ringGeometry args={[scale * 0.9, scale * 1.15, 32]} />
       <meshBasicMaterial color="#ffe6a8" transparent opacity={0.7} side={THREE.DoubleSide} depthWrite={false} />
     </mesh>
+  );
+}
+
+// Turn a small on-device thumbnail (a data URL stored on the memory) into a
+// texture once, so a framed photo can hang on the branch without streaming the
+// full-size media. Returns null when there's no thumbnail.
+function useThumbTexture(thumb: string | undefined): THREE.Texture | null {
+  return useMemo(() => {
+    if (!thumb) return null;
+    const t = new THREE.TextureLoader().load(thumb);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  }, [thumb]);
+}
+
+// A framed photo that hangs on a branch. Chris wanted uploaded photos/videos to
+// live out on the tree, not only inside a lantern — so a memory flagged
+// `onTree` renders as a gilded frame showing its thumbnail, with a cord up to
+// the branch. Videos get a play badge so you know to tap for the clip. The
+// frame billboards (upright) toward the camera so it's always readable.
+function FramedPhoto({
+  scale,
+  texture,
+  isVideo,
+  selected,
+}: {
+  scale: number;
+  texture: THREE.Texture;
+  isVideo: boolean;
+  selected: boolean;
+}) {
+  const group = useRef<THREE.Group>(null);
+  useFrame((state) => {
+    if (!group.current) return;
+    group.current.getWorldPosition(_lblWorld);
+    const cam = state.camera.position;
+    group.current.rotation.y = Math.atan2(cam.x - _lblWorld.x, cam.z - _lblWorld.z);
+  });
+
+  // Keep a sensible minimum so a tiny leaf-scale memory still shows a real frame.
+  const s = Math.max(scale, 0.16);
+  const w = s * 4.2;
+  const h = s * 4.2;
+  const border = s * 0.5;
+  const glowI = selected ? 0.55 : 0.3;
+
+  return (
+    <group ref={group}>
+      {/* short cord so the frame reads as hanging from the branch above it */}
+      <mesh position={[0, h / 2 + s * 0.9, 0]}>
+        <cylinderGeometry args={[s * 0.05, s * 0.05, s * 1.8, 6]} />
+        <meshStandardMaterial color="#6b5a3a" roughness={0.85} />
+      </mesh>
+      {/* gilded frame */}
+      <mesh position={[0, 0, -s * 0.08]} castShadow>
+        <boxGeometry args={[w + border, h + border, s * 0.18]} />
+        <meshStandardMaterial
+          color="#caa96a"
+          roughness={0.45}
+          metalness={0.35}
+          emissive="#caa96a"
+          emissiveIntensity={glowI * 0.4}
+        />
+      </mesh>
+      {/* the photo / video still */}
+      <mesh position={[0, 0, s * 0.03]}>
+        <planeGeometry args={[w, h]} />
+        <meshStandardMaterial
+          map={texture}
+          emissiveMap={texture}
+          emissive="#ffffff"
+          emissiveIntensity={glowI}
+          roughness={0.6}
+        />
+      </mesh>
+      {/* play badge for videos */}
+      {isVideo ? (
+        <group position={[0, 0, s * 0.06]}>
+          <mesh>
+            <circleGeometry args={[s * 0.72, 24]} />
+            <meshBasicMaterial color="#000000" transparent opacity={0.45} depthWrite={false} />
+          </mesh>
+          <mesh position={[s * 0.06, 0, 0.01]}>
+            <circleGeometry args={[s * 0.34, 3]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        </group>
+      ) : null}
+    </group>
   );
 }
 

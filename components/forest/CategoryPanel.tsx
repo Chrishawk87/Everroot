@@ -63,6 +63,76 @@ async function describePlaybackFailure(
   }
 }
 
+// Make a small JPEG thumbnail (data URL) on the device before uploading, so a
+// framed photo can hang on the tree without streaming the full-size media. For
+// a video we grab its first frame; for a photo we downscale it. Best-effort:
+// if anything fails we just return null and the memory still uploads fine.
+const THUMB_MAX = 320; // longest edge, px
+
+function canvasThumb(
+  source: HTMLImageElement | HTMLVideoElement,
+  w: number,
+  h: number,
+): string | null {
+  if (!w || !h) return null;
+  const scale = Math.min(1, THUMB_MAX / Math.max(w, h));
+  const cw = Math.max(1, Math.round(w * scale));
+  const ch = Math.max(1, Math.round(h * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(source, 0, 0, cw, ch);
+  try {
+    return canvas.toDataURL("image/jpeg", 0.72);
+  } catch {
+    return null; // tainted canvas or unsupported — skip the thumbnail
+  }
+}
+
+async function makeThumb(file: File): Promise<string | null> {
+  const url = URL.createObjectURL(file);
+  try {
+    if (file.type.startsWith("image/")) {
+      return await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(canvasThumb(img, img.naturalWidth, img.naturalHeight));
+        img.onerror = () => resolve(null);
+        img.src = url;
+      });
+    }
+    if (file.type.startsWith("video/")) {
+      return await new Promise((resolve) => {
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "metadata";
+        let done = false;
+        const finish = (val: string | null) => {
+          if (done) return;
+          done = true;
+          resolve(val);
+        };
+        video.onloadeddata = () => {
+          // Nudge to a fraction of a second so we don't grab a black frame.
+          const target = Math.min(0.1, (video.duration || 1) / 2);
+          video.currentTime = target || 0;
+        };
+        video.onseeked = () =>
+          finish(canvasThumb(video, video.videoWidth, video.videoHeight));
+        video.onerror = () => finish(null);
+        // Safety net if seeking never fires.
+        setTimeout(() => finish(null), 4000);
+        video.src = url;
+      });
+    }
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export default function CategoryPanel({
   branchId,
   branchTitle,
@@ -76,10 +146,12 @@ export default function CategoryPanel({
   const [loading, setLoading] = useState(false);
   const [playbackErrors, setPlaybackErrors] = useState<Record<string, string>>({});
   const [caption, setCaption] = useState("");
+  const [onTree, setOnTree] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -103,6 +175,13 @@ export default function CategoryPanel({
         const fd = new FormData();
         fd.append("file", file);
         if (caption.trim()) fd.append("caption", caption.trim());
+        fd.append("onTree", onTree ? "1" : "0");
+        // If it will hang on the tree, make a small thumbnail on-device so the
+        // frame can show a picture without loading the full-size media.
+        if (onTree) {
+          const thumb = await makeThumb(file);
+          if (thumb) fd.append("thumb", thumb);
+        }
         const res = await fetch(`/api/category/${branchId}/media`, {
           method: "POST",
           body: fd,
@@ -117,7 +196,7 @@ export default function CategoryPanel({
         setUploading(false);
       }
     },
-    [branchId, caption, load],
+    [branchId, caption, onTree, load],
   );
 
   const onPick = useCallback(
@@ -166,10 +245,20 @@ export default function CategoryPanel({
                   className="hidden"
                   onChange={onPick}
                 />
+                {/* Single media type + capture makes the phone open the camera
+                    directly rather than falling back to the library picker. */}
                 <input
-                  ref={cameraInputRef}
+                  ref={photoInputRef}
                   type="file"
-                  accept="image/*,video/*"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={onPick}
+                />
+                <input
+                  ref={videoInputRef}
+                  type="file"
+                  accept="video/*"
                   capture="environment"
                   className="hidden"
                   onChange={onPick}
@@ -181,20 +270,36 @@ export default function CategoryPanel({
                   maxLength={200}
                   className="mb-3 w-full rounded-lg border border-parchment/15 bg-black/30 px-3 py-2 text-sm text-parchment placeholder:text-parchment/30 focus:border-canopy/50 focus:outline-none"
                 />
+                <label className="mb-3 flex cursor-pointer items-center gap-2.5 text-sm text-parchment/80">
+                  <input
+                    type="checkbox"
+                    checked={onTree}
+                    onChange={(e) => setOnTree(e.target.checked)}
+                    className="h-4 w-4 shrink-0 accent-fruit"
+                  />
+                  <span>Also hang it on the tree as a framed photo</span>
+                </label>
                 <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex-1 rounded-full border border-fruit/40 bg-black/40 px-4 py-2 text-sm text-parchment transition hover:border-fruit/70 hover:brightness-110 disabled:opacity-50"
+                  >
+                    Take a photo
+                  </button>
+                  <button
+                    onClick={() => videoInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex-1 rounded-full border border-fruit/40 bg-black/40 px-4 py-2 text-sm text-parchment transition hover:border-fruit/70 hover:brightness-110 disabled:opacity-50"
+                  >
+                    Record a video
+                  </button>
                   <button
                     onClick={() => libraryInputRef.current?.click()}
                     disabled={uploading}
                     className="flex-1 rounded-full border border-parchment/20 bg-black/30 px-4 py-2 text-sm text-parchment/85 transition hover:border-parchment/50 hover:text-parchment disabled:opacity-50"
                   >
                     Choose from library
-                  </button>
-                  <button
-                    onClick={() => cameraInputRef.current?.click()}
-                    disabled={uploading}
-                    className="flex-1 rounded-full border border-fruit/40 bg-black/40 px-4 py-2 text-sm text-parchment transition hover:border-fruit/70 hover:brightness-110 disabled:opacity-50"
-                  >
-                    Take photo or video
                   </button>
                 </div>
                 {uploading ? (

@@ -55,6 +55,16 @@ export async function POST(req: Request, { params }: { params: { branchId: strin
   const file = form.get("file");
   const caption = String(form.get("caption") ?? "").trim().slice(0, MAX_CAPTION_CHARS);
   const durationMs = Number(form.get("durationMs") ?? 0) || 0;
+  // Whether this memory should also hang out on the tree as a framed photo, and
+  // a small on-device thumbnail (data URL) to show inside that frame.
+  const onTree = String(form.get("onTree") ?? "") === "1";
+  const thumbRaw = String(form.get("thumb") ?? "");
+  // Only trust a small data-URL image; ignore anything else so node.data can't
+  // be stuffed with arbitrary or oversized content.
+  const thumb =
+    onTree && thumbRaw.startsWith("data:image/") && thumbRaw.length <= 200_000
+      ? thumbRaw
+      : null;
 
   if (!(file instanceof Blob) || file.size === 0) {
     return NextResponse.json({ error: "No photo or video was uploaded" }, { status: 400 });
@@ -92,7 +102,13 @@ export async function POST(req: Request, { params }: { params: { branchId: strin
       type: isImage ? "upload_photo" : "record_story",
       title,
       branch: branch.title,
-      data: { source: "lantern_upload", mediaType: isImage ? "photo" : "video" },
+      data: {
+        source: "lantern_upload",
+        mediaType: isImage ? "photo" : "video",
+        // The renderer reads these to hang a framed photo on the branch.
+        onTree,
+        ...(thumb ? { thumb } : {}),
+      },
     });
 
     // Store the media exactly like a voice recording: prefer R2, fall back to
