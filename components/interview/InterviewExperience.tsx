@@ -106,6 +106,11 @@ export default function InterviewExperience({
 
   const [canRecognize, setCanRecognize] = useState(false);
   const [canRecordAudio, setCanRecordAudio] = useState(false);
+  // Whether to run live speech-to-text *while recording*. On Android the speech
+  // recognizer and the audio recorder fight over the single microphone, and the
+  // recognizer wins — starving the recorder so it captures 0 bytes. There we
+  // turn live transcription off and let the audio recording have the mic.
+  const [liveTranscribe, setLiveTranscribe] = useState(false);
   // Bytes actually captured by the recorder — surfaced on screen so we can tell
   // (especially on iOS) whether the mic is really producing audio data.
   const [capturedKb, setCapturedKb] = useState(0);
@@ -148,7 +153,13 @@ export default function InterviewExperience({
     const secure = window.isSecureContext;
     const hasMR = typeof MediaRecorder !== "undefined";
     const hasGUM = !!navigator.mediaDevices?.getUserMedia;
-    setCanRecordAudio(secure && hasMR && hasGUM);
+    const audioOk = secure && hasMR && hasGUM;
+    setCanRecordAudio(audioOk);
+    const recog = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    // Android's recognizer steals the mic from the recorder, so only transcribe
+    // live when we're NOT also recording audio there.
+    const contendsForMic = /Android/i.test(navigator.userAgent);
+    setLiveTranscribe(recog && !(audioOk && contendsForMic));
     if (!secure) {
       setMicReason(
         "This page isn't on a secure (https) connection, so the browser blocks the microphone. Open the site using its https:// web address.",
@@ -306,9 +317,9 @@ export default function InterviewExperience({
 
   const beginSegment = useCallback(() => {
     segStartRef.current = Date.now();
-    if (canRecognize) startRecognition();
+    if (liveTranscribe) startRecognition();
     setPhase("recording");
-  }, [canRecognize, startRecognition]);
+  }, [liveTranscribe, startRecognition]);
 
   // Fresh recording for this question.
   const startRecording = useCallback(async () => {
@@ -707,10 +718,10 @@ export default function InterviewExperience({
               onChange={(e) => setTranscript(e.target.value)}
               placeholder={
                 phase === "recording"
-                  ? canRecognize
+                  ? liveTranscribe
                     ? "Listening… speak naturally, in your own time."
                     : "Recording your voice now — your words won't appear on screen in this browser, but the audio is being saved. You can also type here."
-                  : canRecognize
+                  : liveTranscribe
                     ? "Press record and speak — your words appear here. You can edit them anytime."
                     : "Type your answer here."
               }
@@ -891,11 +902,11 @@ export default function InterviewExperience({
               </p>
             ) : null}
 
-            {!canRecognize ? (
+            {!liveTranscribe ? (
               <p className="mt-6 text-xs text-parchment/40">
-                Live voice-to-text isn't supported in this browser, so type your answer above.
-                {canRecordAudio ? " Your voice is still being recorded." : ""} For the full
-                experience, try Chrome or Safari.
+                {canRecordAudio
+                  ? "Your voice is being recorded and saved. Live word-by-word text isn't shown on this device, but you can type notes above anytime."
+                  : "Live voice-to-text isn't supported in this browser, so type your answer above. For the full experience, try Chrome."}
               </p>
             ) : null}
           </>
