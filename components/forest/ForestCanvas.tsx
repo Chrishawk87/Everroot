@@ -2390,6 +2390,19 @@ const ANCHOR_DIRS: THREE.Vector3[] = [
   new THREE.Vector3(-0.28, 1, 0.28).normalize(),
 ];
 
+// A framed memory sits out at a branch TIP, so an upward-only cone (used by the
+// lanterns, which start below the canopy) mostly misses the tree. To hang a
+// frame we instead search in EVERY direction and snap to the nearest branch
+// surface found — the 26 directions to the neighbouring cells of a 3×3×3 cube.
+const SPHERE_ANCHOR_DIRS: THREE.Vector3[] = (() => {
+  const dirs: THREE.Vector3[] = [];
+  for (let x = -1; x <= 1; x++)
+    for (let y = -1; y <= 1; y++)
+      for (let z = -1; z <= 1; z++)
+        if (x || y || z) dirs.push(new THREE.Vector3(x, y, z).normalize());
+  return dirs;
+})();
+
 // The lantern GLB is opaque, so the candle inside is invisible from the front.
 // Turn its shells translucent (once per shared source scene) so the warm flame
 // glows through the glass. Mutating the cached source is fine — this GLB is
@@ -2914,10 +2927,11 @@ function TreePhoto({
     return Number.isNaN(d.getTime()) ? null : d.getFullYear();
   }, [node.createdAt]);
 
-  // Snap the frame's hang point onto the REAL hero-tree geometry, exactly the
-  // way the lanterns do (fire a cone of rays upward, take the closest branch
-  // hit). Without this the frame sits at the layout's planned point, which the
-  // loaded GLB tree doesn't match — so it floated in empty space. Resolved once.
+  // Snap the frame's hang point onto the REAL hero-tree geometry. The frame's
+  // planned point sits out at a branch TIP, so we search in EVERY direction
+  // (not just upward like the lanterns) and snap to the NEAREST branch surface
+  // found — so the frame always hangs off actual wood instead of floating in
+  // empty space where the layout guessed. Resolved once.
   const anchored = useRef(false);
   const anchorTries = useRef(0);
   const MAX_ANCHOR_TRIES = 120;
@@ -2927,7 +2941,7 @@ function TreePhoto({
     _rayFrom.set(position[0], position[1], position[2]);
     const far = reach ?? 40;
     let best: THREE.Intersection | null = null;
-    for (const dir of ANCHOR_DIRS) {
+    for (const dir of SPHERE_ANCHOR_DIRS) {
       _lanternRaycaster.set(_rayFrom, dir);
       _lanternRaycaster.far = far;
       const hits = _lanternRaycaster.intersectObject(heroRef.current, true);
