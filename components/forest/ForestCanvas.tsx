@@ -1149,6 +1149,8 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
             positioned={p}
             selected={p.node.id === selectedId}
             onOpenMedia={onOpenMedia!}
+            heroRef={heroRef}
+            reach={layout.trunkHeight}
           />
         ))}
 
@@ -2890,13 +2892,20 @@ function TreePhoto({
   positioned,
   selected,
   onOpenMedia,
+  heroRef,
+  reach,
 }: {
   positioned: PositionedNode;
   selected: boolean;
   onOpenMedia: (node: ForestNodeDTO) => void;
+  /** The real hero-tree object, so the frame can hang from actual geometry. */
+  heroRef?: React.MutableRefObject<THREE.Object3D | null>;
+  /** How far up to search for a branch to hang from (≈ the tree height). */
+  reach?: number;
 }) {
   const { node, position, scale } = positioned;
   const [hovered, setHovered] = useState(false);
+  const groupRef = useRef<THREE.Group>(null);
   const thumb = typeof node.data?.thumb === "string" ? (node.data.thumb as string) : undefined;
   const isVideo = node.data?.mediaType === "video";
   const tex = useThumbTexture(thumb);
@@ -2904,6 +2913,34 @@ function TreePhoto({
     const d = new Date(node.createdAt);
     return Number.isNaN(d.getTime()) ? null : d.getFullYear();
   }, [node.createdAt]);
+
+  // Snap the frame's hang point onto the REAL hero-tree geometry, exactly the
+  // way the lanterns do (fire a cone of rays upward, take the closest branch
+  // hit). Without this the frame sits at the layout's planned point, which the
+  // loaded GLB tree doesn't match — so it floated in empty space. Resolved once.
+  const anchored = useRef(false);
+  const anchorTries = useRef(0);
+  const MAX_ANCHOR_TRIES = 120;
+  useFrame(() => {
+    if (anchored.current || !heroRef?.current || !groupRef.current) return;
+    anchorTries.current += 1;
+    _rayFrom.set(position[0], position[1], position[2]);
+    const far = reach ?? 40;
+    let best: THREE.Intersection | null = null;
+    for (const dir of ANCHOR_DIRS) {
+      _lanternRaycaster.set(_rayFrom, dir);
+      _lanternRaycaster.far = far;
+      const hits = _lanternRaycaster.intersectObject(heroRef.current, true);
+      if (hits.length > 0 && (!best || hits[0].distance < best.distance)) best = hits[0];
+    }
+    if (best) {
+      groupRef.current.position.set(best.point.x, best.point.y, best.point.z);
+      anchored.current = true;
+    } else if (anchorTries.current >= MAX_ANCHOR_TRIES) {
+      anchored.current = true;
+    }
+  });
+
   if (!tex) return null;
 
   const s = Math.max(scale, 0.24);
@@ -2912,6 +2949,7 @@ function TreePhoto({
 
   return (
     <group
+      ref={groupRef}
       position={position as Vec3}
       onPointerOver={(e) => {
         e.stopPropagation();
