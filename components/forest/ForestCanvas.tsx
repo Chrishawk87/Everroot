@@ -2390,19 +2390,6 @@ const ANCHOR_DIRS: THREE.Vector3[] = [
   new THREE.Vector3(-0.28, 1, 0.28).normalize(),
 ];
 
-// A framed memory sits out at a branch TIP, so an upward-only cone (used by the
-// lanterns, which start below the canopy) mostly misses the tree. To hang a
-// frame we instead search in EVERY direction and snap to the nearest branch
-// surface found — the 26 directions to the neighbouring cells of a 3×3×3 cube.
-const SPHERE_ANCHOR_DIRS: THREE.Vector3[] = (() => {
-  const dirs: THREE.Vector3[] = [];
-  for (let x = -1; x <= 1; x++)
-    for (let y = -1; y <= 1; y++)
-      for (let z = -1; z <= 1; z++)
-        if (x || y || z) dirs.push(new THREE.Vector3(x, y, z).normalize());
-  return dirs;
-})();
-
 // The lantern GLB is opaque, so the candle inside is invisible from the front.
 // Turn its shells translucent (once per shared source scene) so the warm flame
 // glows through the glass. Mutating the cached source is fine — this GLB is
@@ -2820,11 +2807,14 @@ function FramedPhoto({
   texture,
   isVideo,
   selected,
+  drop,
 }: {
   scale: number;
   texture: THREE.Texture;
   isVideo: boolean;
   selected: boolean;
+  /** Cord length: how far the frame hangs BELOW its branch attach point. */
+  drop: number;
 }) {
   const group = useRef<THREE.Group>(null);
   useFrame((state) => {
@@ -2841,10 +2831,11 @@ function FramedPhoto({
   const border = s * 0.5;
   const glowI = selected ? 0.55 : 0.3;
 
-  // The group's origin sits ON the branch (the layout's foliage point). The
-  // frame HANGS below it from a cord, like a real hanging picture — so it reads
-  // as attached to the tree rather than floating above the canopy.
-  const cordLen = s * 1.6;
+  // The group's origin sits ON the branch (the anchored point). The frame HANGS
+  // below it on a cord long enough to clear the foliage, like a real hanging
+  // picture — so it dangles below the leaf edge where it's clearly visible
+  // rather than being buried inside the canopy.
+  const cordLen = drop;
   const hangY = -(cordLen + h / 2 + border / 2);
 
   return (
@@ -2916,7 +2907,7 @@ function TreePhoto({
   /** How far up to search for a branch to hang from (≈ the tree height). */
   reach?: number;
 }) {
-  const { node, position, scale } = positioned;
+  const { node, position } = positioned;
   const [hovered, setHovered] = useState(false);
   const groupRef = useRef<THREE.Group>(null);
   const thumb = typeof node.data?.thumb === "string" ? (node.data.thumb as string) : undefined;
@@ -2927,23 +2918,37 @@ function TreePhoto({
     return Number.isNaN(d.getTime()) ? null : d.getFullYear();
   }, [node.createdAt]);
 
-  // Snap the frame's hang point onto the REAL hero-tree geometry. The frame's
-  // planned point sits out at a branch TIP, so we search in EVERY direction
-  // (not just upward like the lanterns) and snap to the NEAREST branch surface
-  // found — so the frame always hangs off actual wood instead of floating in
-  // empty space where the layout guessed. Resolved once.
+  const H = reach ?? 40;
+  // Hang framed memories exactly like the category lanterns: attach to the OUTER
+  // canopy band and dangle BELOW the leaf edge, so the picture reads clearly
+  // instead of being buried inside the foliage (an earlier version snapped to
+  // the nearest branch, which left frames lost among the leaves). We keep the
+  // memory's own compass angle (from its layout point) so each frame stays where
+  // its branch roughly is, then normalise the radius/height to the visible band.
+  const band = useMemo<Vec3>(() => {
+    const key = `treephoto${node.id}`;
+    const planarR = Math.hypot(position[0], position[2]);
+    const baseAngle =
+      planarR > 0.001 ? Math.atan2(position[2], position[0]) : hash01(key, 11) * Math.PI * 2;
+    const a = baseAngle + (hash01(key, 3) - 0.5) * 0.18;
+    const R = H * 0.6 * (0.94 + hash01(key, 7) * 0.12);
+    const y = H * 0.62 + (hash01(key, 5) - 0.5) * H * 0.1;
+    return [Math.cos(a) * R, y, Math.sin(a) * R];
+  }, [node.id, position, H]);
+
+  // Fine-tune the cord's TOP onto the REAL hero-tree geometry with the same
+  // upward cone-raycast the lanterns use, so the frame hangs off actual wood.
   const anchored = useRef(false);
   const anchorTries = useRef(0);
   const MAX_ANCHOR_TRIES = 120;
   useFrame(() => {
     if (anchored.current || !heroRef?.current || !groupRef.current) return;
     anchorTries.current += 1;
-    _rayFrom.set(position[0], position[1], position[2]);
-    const far = reach ?? 40;
+    _rayFrom.set(band[0], band[1], band[2]);
     let best: THREE.Intersection | null = null;
-    for (const dir of SPHERE_ANCHOR_DIRS) {
+    for (const dir of ANCHOR_DIRS) {
       _lanternRaycaster.set(_rayFrom, dir);
-      _lanternRaycaster.far = far;
+      _lanternRaycaster.far = H;
       const hits = _lanternRaycaster.intersectObject(heroRef.current, true);
       if (hits.length > 0 && (!best || hits[0].distance < best.distance)) best = hits[0];
     }
@@ -2957,14 +2962,17 @@ function TreePhoto({
 
   if (!tex) return null;
 
-  const s = Math.max(scale, 0.24);
-  // Sit the label just below the branch point, over the top of the frame.
-  const labelY = -(s * 1.6 + 0.35);
+  // Size the picture to the tree (leaf-scale frames were invisible on a 22-unit
+  // tree) and give it a lantern-length cord so it dangles below the foliage.
+  const fs = H * 0.045;
+  const drop = H * 0.13;
+  // Sit the label just below the hanging frame.
+  const labelY = -(drop + fs * 3.6 + 0.7);
 
   return (
     <group
       ref={groupRef}
-      position={position as Vec3}
+      position={band}
       onPointerOver={(e) => {
         e.stopPropagation();
         setHovered(true);
@@ -2981,7 +2989,7 @@ function TreePhoto({
         onOpenMedia(node);
       }}
     >
-      <FramedPhoto scale={s} texture={tex} isVideo={isVideo} selected={selected} />
+      <FramedPhoto scale={fs} texture={tex} isVideo={isVideo} selected={selected} drop={drop} />
       {hovered || selected ? (
         <Html center distanceFactor={12} position={[0, labelY, 0]}>
           <div className="pointer-events-none select-none whitespace-nowrap rounded-full bg-black/75 px-3 py-1 font-serif text-xs text-parchment [text-shadow:0_1px_4px_rgba(0,0,0,0.9)]">
