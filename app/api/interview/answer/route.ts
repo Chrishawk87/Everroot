@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { grow, ensurePerson, linkMention } from "@/lib/forest/growth-engine";
 import { recordings } from "@/lib/recordings";
 import { storageConfigured, putRecording, newRecordingKey } from "@/lib/storage";
+import { aiConfigured, transcribeAudio, polishIntoStory } from "@/lib/ai";
 import { getQuestionById, MOMENT_TYPE_BY_QUESTION } from "@/lib/interview/script";
 import { rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
 
@@ -66,11 +67,43 @@ export async function POST(req: Request) {
   }
 
   try {
-  // Grow the memory. The transcript becomes the memory's story text.
+  // Read the recorded audio once, up front: we need the bytes both for
+  // server-side transcription and, later, for storage.
+  let audioBytes: Uint8Array | null = null;
+  let audioMime = "audio/webm";
+  if (audio instanceof Blob && audio.size > 0) {
+    audioBytes = new Uint8Array(await audio.arrayBuffer());
+    audioMime = audio.type || "audio/webm";
+  }
+
+  // AI pass. Two optional steps, both non-fatal (see lib/ai.ts):
+  //   1. Whisper transcribes the audio into an accurate transcript. If it
+  //      returns nothing (AI off, error, no audio), we fall back to the
+  //      transcript the phone captured.
+  //   2. A chat model rewrites that raw transcript into a polished first-person
+  //      story. If it returns nothing, we fall back to the raw transcript.
+  // The raw transcript is always preserved; the polished story is what the tree
+  // and book display.
+  let rawTranscript = transcript;
+  if (aiConfigured() && audioBytes) {
+    const heard = await transcribeAudio(audioBytes, audioMime);
+    if (heard) rawTranscript = heard.slice(0, MAX_TRANSCRIPT_CHARS);
+  }
+
+  let story = "";
+  if (aiConfigured() && rawTranscript) {
+    story = (await polishIntoStory(rawTranscript, question.prompt)).slice(0, MAX_TRANSCRIPT_CHARS);
+  }
+
+  // The memory's displayed text is the polished story when we have one,
+  // otherwise the raw transcript.
+  const memoryText = story || rawTranscript;
+
+  // Grow the memory. The polished story becomes the memory's displayed text.
   const result = await grow(userId, {
     type: question.interaction,
     title: question.title,
-    summary: transcript || undefined,
+    summary: memoryText || undefined,
     branch: question.branch,
     epoch: question.epoch,
     momentType: MOMENT_TYPE_BY_QUESTION[question.id],
@@ -78,7 +111,8 @@ export async function POST(req: Request) {
       source: "voice_interview",
       questionId: question.id,
       question: question.prompt,
-      transcript: transcript || null,
+      transcript: rawTranscript || null,
+      story: story || null,
     },
   });
 
@@ -116,9 +150,9 @@ export async function POST(req: Request) {
 
   // Store the recording, if the browser captured one.
   let recordingId: string | null = null;
-  if (audio instanceof Blob && audio.size > 0) {
-    const bytes = new Uint8Array(await audio.arrayBuffer());
-    const mimeType = audio.type || "audio/webm";
+  if (audioBytes) {
+    const bytes = audioBytes;
+    const mimeType = audioMime;
 
     // Prefer object storage (R2). If it's configured, upload the audio there and
     // store only the key in Postgres; the raw bytes stay out of the database.
@@ -146,7 +180,8 @@ export async function POST(req: Request) {
         durationMs,
         bytes: storageKey ? null : bytes,
         storageKey,
-        transcript: transcript || null,
+        transcript: rawTranscript || null,
+        story: story || null,
         question: question.prompt,
       },
     });

@@ -389,8 +389,14 @@ export async function getBook(ownerId: string, viewerId: string): Promise<Book |
     if (!BOOK_KINDS.has(n.kind)) continue;
 
     const rec = recByNode.get(n.id);
+    // Prefer the AI-polished story, then the raw transcript, then the node's
+    // own summary — so new memories read as prose while older ones still show.
+    const story = rec?.story?.trim();
     const transcript = rec?.transcript?.trim();
-    const body = transcript && transcript.length > 0 ? transcript : n.summary;
+    const body =
+      (story && story.length > 0 ? story : undefined) ??
+      (transcript && transcript.length > 0 ? transcript : undefined) ??
+      n.summary;
     const chapter: BookChapter = {
       nodeId: n.id,
       title: n.title,

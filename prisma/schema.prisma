@@ -233,6 +233,11 @@ model Recording {
   bytes      Bytes?   // legacy: raw audio blob stored in Postgres (pre-R2 recordings)
   storageKey String?  // R2 object key for new recordings; null means bytes live in `bytes`
   transcript String?  @db.Text
+  // AI-polished first-person story rewritten from `transcript`. The raw
+  // transcript is always kept; `story` is the beautiful version shown on the
+  // tree, in the book, and in the story feed. Null on older recordings and
+  // whenever AI rewriting was unavailable (we fall back to the transcript).
+  story      String?  @db.Text
   question   String?  // the interview question that prompted this answer
   createdAt  DateTime @default(now())
 

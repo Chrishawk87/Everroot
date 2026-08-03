@@ -24,6 +24,8 @@ export interface RecordingRow {
   bytes: Uint8Array | null;
   storageKey: string | null;
   transcript: string | null;
+  // AI-polished first-person story (null when unavailable — fall back to transcript).
+  story: string | null;
   question: string | null;
   createdAt: Date;
 }
@@ -36,6 +38,7 @@ export interface CreateRecordingInput {
   bytes?: Uint8Array | null;
   storageKey?: string | null;
   transcript?: string | null;
+  story?: string | null;
   question?: string | null;
 }
 
@@ -47,6 +50,7 @@ export interface RecordingMeta {
   mimeType: string;
   durationMs: number;
   transcript: string | null;
+  story: string | null;
   question: string | null;
   createdAt: Date;
 }
@@ -67,6 +71,7 @@ interface RecordingDelegate {
       mimeType?: boolean;
       durationMs?: boolean;
       transcript?: boolean;
+      story?: boolean;
       question?: boolean;
       createdAt?: boolean;
     };
@@ -147,6 +152,7 @@ export function listRecordingsForUser(userId: string): Promise<RecordingMeta[]> 
       mimeType: true,
       durationMs: true,
       transcript: true,
+      story: true,
       question: true,
       createdAt: true,
     },
