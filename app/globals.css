@@ -65,3 +65,61 @@ body {
     opacity: 1;
   }
 }
+
+/* --- Cinematic landing intro ---------------------------------------------
+   Slow "Ken Burns" drifts for the crossfading hero stills. Each active frame
+   runs one of these so the still image feels alive as it holds on screen.
+   Kept subtle (small scale + a few % of pan) so it reads as a breath, not a
+   lurch. Honors prefers-reduced-motion (see the media query below). */
+@keyframes kenBurnsIn {
+  from {
+    transform: scale(1.08) translate(2%, 1%);
+  }
+  to {
+    transform: scale(1.16) translate(-2%, -1%);
+  }
+}
+
+@keyframes kenBurnsOut {
+  from {
+    transform: scale(1.16) translate(-2%, 1%);
+  }
+  to {
+    transform: scale(1.08) translate(2%, -1%);
+  }
+}
+
+/* Text beats rise gently as they fade in over each frame. */
+@keyframes beatRise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The final logo + CTA settling in once the journey arrives at the tree. */
+@keyframes ctaSettle {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kb-frame {
+    animation: none !important;
+    transform: scale(1.08) !important;
+  }
+  .beat-rise,
+  .cta-settle {
+    animation: none !important;
+  }
+}
