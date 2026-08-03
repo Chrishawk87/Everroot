@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { grow, ensurePerson, linkMention } from "@/lib/forest/growth-engine";
 import { recordings } from "@/lib/recordings";
 import { storageConfigured, putRecording, newRecordingKey } from "@/lib/storage";
-import { aiConfigured, transcribeAudio, polishIntoStory } from "@/lib/ai";
+import { aiConfigured, transcribeAudio } from "@/lib/ai";
 import { getQuestionById, MOMENT_TYPE_BY_QUESTION } from "@/lib/interview/script";
 import { rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
 
@@ -76,34 +76,24 @@ export async function POST(req: Request) {
     audioMime = audio.type || "audio/webm";
   }
 
-  // AI pass. Two optional steps, both non-fatal (see lib/ai.ts):
-  //   1. Whisper transcribes the audio into an accurate transcript. If it
-  //      returns nothing (AI off, error, no audio), we fall back to the
-  //      transcript the phone captured.
-  //   2. A chat model rewrites that raw transcript into a polished first-person
-  //      story. If it returns nothing, we fall back to the raw transcript.
-  // The raw transcript is always preserved; the polished story is what the tree
-  // and book display.
+  // Accurate transcription only — we capture the speaker's EXACT words with
+  // Whisper (more accurate than the phone's own transcription) but we do NOT
+  // rewrite them here. Authenticity is the point: the real voice and the real
+  // words are preserved. Turning a memory into polished prose is an explicit,
+  // opt-in choice the owner makes later via the "Polish" button (see
+  // /api/memory/[nodeId]/polish). If Whisper is off or fails, we fall back to
+  // the transcript the phone captured.
   let rawTranscript = transcript;
   if (aiConfigured() && audioBytes) {
     const heard = await transcribeAudio(audioBytes, audioMime);
     if (heard) rawTranscript = heard.slice(0, MAX_TRANSCRIPT_CHARS);
   }
 
-  let story = "";
-  if (aiConfigured() && rawTranscript) {
-    story = (await polishIntoStory(rawTranscript, question.prompt)).slice(0, MAX_TRANSCRIPT_CHARS);
-  }
-
-  // The memory's displayed text is the polished story when we have one,
-  // otherwise the raw transcript.
-  const memoryText = story || rawTranscript;
-
-  // Grow the memory. The polished story becomes the memory's displayed text.
+  // Grow the memory. Its displayed text is the raw transcript (their own words).
   const result = await grow(userId, {
     type: question.interaction,
     title: question.title,
-    summary: memoryText || undefined,
+    summary: rawTranscript || undefined,
     branch: question.branch,
     epoch: question.epoch,
     momentType: MOMENT_TYPE_BY_QUESTION[question.id],
@@ -112,7 +102,7 @@ export async function POST(req: Request) {
       questionId: question.id,
       question: question.prompt,
       transcript: rawTranscript || null,
-      story: story || null,
+      story: null,
     },
   });
 
@@ -181,7 +171,7 @@ export async function POST(req: Request) {
         bytes: storageKey ? null : bytes,
         storageKey,
         transcript: rawTranscript || null,
-        story: story || null,
+        story: null,
         question: question.prompt,
       },
     });

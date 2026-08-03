@@ -215,6 +215,62 @@ export default function CategoryPanel({
   // Which items are mid-toggle, so we can disable their switch + show a hint.
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
 
+  // Opt-in AI polish. `polishing` marks an item mid-request; `showOriginal`
+  // lets the owner flip a polished memory back to the raw words on screen
+  // (without discarding the polish); `polishError` surfaces any failure.
+  const [polishing, setPolishing] = useState<Record<string, boolean>>({});
+  const [showOriginal, setShowOriginal] = useState<Record<string, boolean>>({});
+  const [polishError, setPolishError] = useState<Record<string, string>>({});
+
+  // Polish a memory into first-person prose (want=true) or undo it (want=false).
+  // The raw transcript is never changed; we only set/clear the separate story.
+  const polishMemory = useCallback(
+    async (it: CategoryItem, want: boolean) => {
+      setPolishing((m) => ({ ...m, [it.nodeId]: true }));
+      setPolishError((m) => {
+        const { [it.nodeId]: _drop, ...rest } = m;
+        return rest;
+      });
+      try {
+        const res = await fetch(`/api/memory/${it.nodeId}/polish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ polish: want }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { story?: string | null; error?: string };
+        if (!res.ok) throw new Error(data.error || "That didn't work — please try again.");
+        const story = data.story ?? null;
+        setContents((prev) =>
+          prev
+            ? {
+                ...prev,
+                items: prev.items.map((x) =>
+                  x.nodeId === it.nodeId ? { ...x, story, aiPolished: Boolean(story) } : x,
+                ),
+              }
+            : prev,
+        );
+        // After polishing, show the polished version; after undo there's nothing
+        // to toggle, so clear any stale "show original" flag.
+        setShowOriginal((m) => {
+          const { [it.nodeId]: _drop, ...rest } = m;
+          return rest;
+        });
+      } catch (e) {
+        setPolishError((m) => ({
+          ...m,
+          [it.nodeId]: e instanceof Error ? e.message : "That didn't work — please try again.",
+        }));
+      } finally {
+        setPolishing((m) => {
+          const { [it.nodeId]: _drop, ...rest } = m;
+          return rest;
+        });
+      }
+    },
+    [],
+  );
+
   // Flip whether a memory hangs on the tree. Turning ON needs a thumbnail for
   // the frame: if the memory doesn't have one yet we make one on-device from its
   // stored media (its photo, or the first frame of its video). We update the
@@ -440,26 +496,86 @@ export default function CategoryPanel({
                     })()
                   ) : null}
 
-                  {/* Written words — the AI-polished story if we have one,
-                      otherwise the raw transcript, otherwise the summary. */}
-                  {it.story && it.story.trim().length > 0 ? (
-                    <>
-                      <span className="mt-3 inline-flex items-center gap-1 rounded-full border border-canopy/50 bg-canopy/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-canopy-light">
-                        ✨ Polished by AI
-                      </span>
-                      <p className="mt-2 whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/85">
-                        {it.story}
-                      </p>
-                    </>
-                  ) : it.transcript && it.transcript.trim().length > 0 ? (
-                    <p className="mt-3 whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/85">
-                      {it.transcript}
-                    </p>
-                  ) : it.summary ? (
-                    <p className="mt-3 whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/75">
-                      {it.summary}
-                    </p>
-                  ) : null}
+                  {/* Written words. By default we show the ORIGINAL words —
+                      their real voice, transcribed. Polishing into prose is an
+                      opt-in choice the owner makes; the raw words are always
+                      kept and can be shown again or the polish undone. */}
+                  {(() => {
+                    const rawText =
+                      it.transcript && it.transcript.trim().length > 0
+                        ? it.transcript
+                        : it.summary && it.summary.trim().length > 0
+                          ? it.summary
+                          : null;
+                    const hasStory = !!(it.story && it.story.trim().length > 0);
+                    const viewingOriginal = !!showOriginal[it.nodeId];
+                    const busy = !!polishing[it.nodeId];
+
+                    return (
+                      <>
+                        {hasStory && !viewingOriginal ? (
+                          <>
+                            <span className="mt-3 inline-flex items-center gap-1 rounded-full border border-canopy/50 bg-canopy/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-canopy-light">
+                              ✨ Polished by AI
+                            </span>
+                            <p className="mt-2 whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/85">
+                              {it.story}
+                            </p>
+                          </>
+                        ) : rawText ? (
+                          <>
+                            {hasStory ? (
+                              <span className="mt-3 inline-flex items-center gap-1 rounded-full border border-parchment/25 bg-black/30 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-parchment/70">
+                                Original words
+                              </span>
+                            ) : null}
+                            <p
+                              className={`${hasStory ? "mt-2" : "mt-3"} whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/85`}
+                            >
+                              {rawText}
+                            </p>
+                          </>
+                        ) : null}
+
+                        {/* Owner-only polish controls. */}
+                        {contents.canEdit && rawText ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {!hasStory ? (
+                              <button
+                                onClick={() => void polishMemory(it, true)}
+                                disabled={busy}
+                                className="inline-flex items-center gap-2 rounded-full border border-canopy/50 bg-canopy/15 px-3 py-1.5 text-xs text-parchment transition hover:border-canopy disabled:opacity-50"
+                              >
+                                <span>✨</span>
+                                <span>{busy ? "Polishing…" : "Polish this with AI"}</span>
+                              </button>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() =>
+                                    setShowOriginal((m) => ({ ...m, [it.nodeId]: !viewingOriginal }))
+                                  }
+                                  className="inline-flex items-center gap-2 rounded-full border border-parchment/20 bg-black/30 px-3 py-1.5 text-xs text-parchment/80 transition hover:border-parchment/50"
+                                >
+                                  {viewingOriginal ? "Show polished" : "Show original words"}
+                                </button>
+                                <button
+                                  onClick={() => void polishMemory(it, false)}
+                                  disabled={busy}
+                                  className="inline-flex items-center gap-2 rounded-full border border-parchment/20 bg-black/30 px-3 py-1.5 text-xs text-parchment/60 transition hover:border-bloom/60 hover:text-parchment disabled:opacity-50"
+                                >
+                                  {busy ? "Working…" : "Undo polish"}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : null}
+                        {polishError[it.nodeId] ? (
+                          <p className="mt-1.5 text-xs text-bloom">{polishError[it.nodeId]}</p>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                   {/* Owner-only: hang this memory on the tree, or take it down. */}
                   {contents.canEdit && (it.recordingId || it.photoUrl) ? (
                     <button

@@ -57,6 +57,7 @@ export interface RecordingMeta {
 
 interface RecordingDelegate {
   create(args: { data: CreateRecordingInput }): Promise<RecordingRow>;
+  update(args: { where: { id: string }; data: { story?: string | null } }): Promise<RecordingRow>;
   findUnique(args: { where: { id: string } }): Promise<RecordingRow | null>;
   findFirst(args: {
     where: { nodeId: string };
@@ -135,6 +136,15 @@ export async function markRecordingStored(id: string, storageKey: string): Promi
 /** The most recent recording attached to a memory node, if any. */
 export function findRecordingForNode(nodeId: string): Promise<RecordingRow | null> {
   return recordings().findFirst({ where: { nodeId }, orderBy: { createdAt: "desc" } });
+}
+
+/**
+ * Set (or clear, with null) the AI-polished story on a recording. Used by the
+ * opt-in "Polish" button — the raw transcript is never touched, so the original
+ * words are always preserved and the owner can undo the polish at any time.
+ */
+export async function setRecordingStory(id: string, story: string | null): Promise<void> {
+  await recordings().update({ where: { id }, data: { story } });
 }
 
 /**
