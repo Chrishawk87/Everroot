@@ -75,3 +75,48 @@ export function brandImage(key: keyof typeof BRAND): string {
   const img = BRAND[key];
   return SELF_HOSTED ? img.localPath : img.cdnUrl;
 }
+
+/**
+ * The cinematic opening — a single continuous 10s descent from the dawn clouds,
+ * down through the branches past the hanging lanterns and memories, settling at
+ * the base of the great trunk. Authored in Higgsfield (Kling v3.0, start+end
+ * frames). Served from the same CDN as the brand stills.
+ *
+ * To self-host: drop the files into /public at the localPath below and flip
+ * SELF_HOSTED to true — everything reads through the helpers.
+ */
+export const OPENING = {
+  /** The descent video itself. */
+  video: {
+    cdnUrl:
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260803_204412_d11b56b0-f844-4a00-92d2-4ed6cf77864d.mp4",
+    localPath: "/everroot-opening.mp4",
+  },
+  /** First frame (aerial above the canopy) — the video poster + load fallback. */
+  posterStart: {
+    cdnUrl:
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260803_204121_b4e1e934-f939-47e1-94dc-7fe66a1c2ce4.png",
+    localPath: "/everroot-opening-start.jpg",
+  },
+  /** Last frame (base of the trunk) — the settled arrival + reduced-motion still. */
+  posterEnd: {
+    cdnUrl:
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260803_204121_994df36c-d6a5-40a4-a464-e4053f03fe50.png",
+    localPath: "/everroot-opening-end.jpg",
+  },
+} as const;
+
+/** URL for the opening descent video (self-hosted when available). */
+export function openingVideo(): string {
+  return SELF_HOSTED ? OPENING.video.localPath : OPENING.video.cdnUrl;
+}
+
+/** URL for the opening's first frame (poster / load fallback). */
+export function openingPosterStart(): string {
+  return SELF_HOSTED ? OPENING.posterStart.localPath : OPENING.posterStart.cdnUrl;
+}
+
+/** URL for the opening's final frame (settled arrival / reduced-motion still). */
+export function openingPosterEnd(): string {
+  return SELF_HOSTED ? OPENING.posterEnd.localPath : OPENING.posterEnd.cdnUrl;
+}

@@ -1,13 +1,19 @@
 // Content Security Policy. Kept functional for a Next.js + React Three Fiber app:
 // 'unsafe-inline'/'unsafe-eval' are needed for Next's inline bootstrap scripts
 // and some bundled code. A future tightening step can move scripts to nonces.
+// The Higgsfield CloudFront distribution where our authored brand stills and the
+// cinematic opening video live (see lib/brand.ts). Allowed for images + media so
+// the landing hero art and opening descent load in the browser. Flip brand.ts's
+// SELF_HOSTED to true (and drop the files into /public) to remove this dependency.
+const BRAND_CDN = "https://d8j0ntlcm91z4.cloudfront.net";
+
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  "img-src 'self' data: blob:",
-  "media-src 'self' blob:", // streamed recordings come from our own /api
+  `img-src 'self' data: blob: ${BRAND_CDN}`,
+  `media-src 'self' blob: ${BRAND_CDN}`, // streamed recordings from /api + the opening video from the CDN
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval'",

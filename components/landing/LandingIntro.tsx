@@ -1,51 +1,45 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { brandImage, BRAND, type BrandImage } from "@/lib/brand";
+import { useEffect, useRef, useState } from "react";
+import { openingVideo, openingPosterStart, openingPosterEnd } from "@/lib/brand";
 
 /**
- * The cinematic entry experience — the slow crossfading journey up to the great
- * tree that lands EverRoot's emotional pitch.
+ * The cinematic entry experience — a single continuous descent from the dawn
+ * clouds, down through the branches past the hanging lanterns and memories,
+ * settling at the base of the great tree, where EverRoot's pitch lands.
  *
  * It runs in two modes:
  *  - "landing" (default): the marketing surface shown to logged-OUT visitors.
  *    It settles on the logo, the pitch, and the signup / login call-to-action.
- *  - "replay": the same journey played as an overlay INSIDE the forest — for a
+ *  - "replay": the same descent played as an overlay INSIDE the forest — for a
  *    first visit and for the "Replay the opening" button. Instead of a signup
- *    CTA it settles on a warm welcome and then dismisses into the forest
- *    (via onComplete), so a signed-in person is never shown a signup button.
+ *    CTA it settles on a warm welcome and then dismisses into the forest (via
+ *    onComplete), so a signed-in person is never shown a signup button.
  *
- * The journey itself (frames + staged text) is identical in both modes so the
- * brand moment is consistent everywhere it appears.
+ * The descent itself (a ~10s video authored in Higgsfield) plays once and holds
+ * its final frame; the four warm lines fade through over it, then the logo +
+ * ending settle in.
  *
  * Design choices:
- *  - Auto-plays but is always SKIPPABLE so no one is trapped watching it.
- *  - Uses the existing brand stills (served from the CDN via brandImage), so it
- *    ships with no new assets and stays light on mobile.
- *  - Honors prefers-reduced-motion: the journey is skipped and the final frame
- *    is shown immediately (see globals.css .kb-frame overrides).
+ *  - Auto-plays (muted, inline) but is always SKIPPABLE so no one is trapped.
+ *  - Honors prefers-reduced-motion: the video is skipped and the final still is
+ *    shown immediately with the ending already settled.
  */
 
-interface Beat {
-  /** Which brand still this beat sits on. */
-  key: keyof typeof BRAND;
-  /** The line of copy that fades in over the frame (empty on the arrival frame). */
-  line: string;
-}
-
-// The narrative arc. Frames 0–3 carry a line of copy; the final frame (reveal)
-// is the "arrival" that carries the logo + ending instead of a line.
-const BEATS: Beat[] = [
-  { key: "valleyVista", line: "Every life is a story worth keeping." },
-  { key: "duskPath", line: "The people we love. The moments that made us." },
-  { key: "valleyHero", line: "Their voices. Their laughter. Their words." },
-  { key: "trunk", line: "Keep them close, always." },
-  { key: "reveal", line: "" },
+// The four lines that fade through over the descent — the same warm words as
+// the original opening.
+const LINES = [
+  "Every life is a story worth keeping.",
+  "The people we love. The moments that made us.",
+  "Their voices. Their laughter. Their words.",
+  "Keep them close, always.",
 ];
 
-const ARRIVAL = BEATS.length - 1; // index of the final frame
-const HOLD_MS = 3200; // how long each narrative beat holds before advancing
+// When each line enters (ms), paced to the ~10s descent, and when the descent
+// settles and the logo / ending appear.
+const LINE_CUES = [700, 3000, 5400, 7700];
+const ARRIVE_MS = 10200; // safety fallback if the video's onEnded never fires
 const REPLAY_LINGER_MS = 3600; // how long the welcome holds before auto-dismiss
 const FADE_MS = 1000; // overlay fade-out on dismiss (replay mode)
 
@@ -60,34 +54,36 @@ interface Props {
 
 export default function LandingIntro({ mode = "landing", displayName, onComplete }: Props) {
   const isReplay = mode === "replay";
-  const [index, setIndex] = useState(0);
+  const [lineIndex, setLineIndex] = useState(-1); // -1 = no line showing yet
   const [arrived, setArrived] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [reduce, setReduce] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const done = useRef(false);
 
-  // Respect reduced-motion: skip the journey, land on the final frame.
+  // Respect reduced-motion: skip the descent, land on the settled final still.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (reduce?.matches) {
-      setIndex(ARRIVAL);
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (mq?.matches) {
+      setReduce(true);
       setArrived(true);
     }
   }, []);
 
-  // Auto-advance through the beats until we arrive at the final frame.
+  // Drive the word beats + a safety arrival on a fixed schedule paced to the
+  // descent. (The video's onEnded is the primary trigger for arrival.)
   useEffect(() => {
-    if (arrived) return;
-    if (index >= ARRIVAL) {
-      setArrived(true);
-      return;
-    }
-    timer.current = setTimeout(() => setIndex((i) => i + 1), HOLD_MS);
+    if (reduce || arrived) return;
+    const t = timers.current;
+    LINE_CUES.forEach((cue, i) => t.push(setTimeout(() => setLineIndex(i), cue)));
+    t.push(setTimeout(() => setArrived(true), ARRIVE_MS));
     return () => {
-      if (timer.current) clearTimeout(timer.current);
+      t.forEach(clearTimeout);
+      timers.current = [];
     };
-  }, [index, arrived]);
+  }, [reduce, arrived]);
 
   // Replay mode: once we arrive, linger on the welcome, then dismiss.
   useEffect(() => {
@@ -101,22 +97,24 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
   function finish() {
     if (done.current) return;
     done.current = true;
-    if (timer.current) clearTimeout(timer.current);
+    timers.current.forEach(clearTimeout);
     setLeaving(true);
     setTimeout(() => onComplete?.(), FADE_MS);
   }
 
-  // Landing mode: "Enter" / skip jumps straight to the tree and the CTA.
+  // "Enter" / skip jumps straight to the settled ending.
   function enter() {
-    if (timer.current) clearTimeout(timer.current);
-    setIndex(ARRIVAL);
+    timers.current.forEach(clearTimeout);
+    const v = videoRef.current;
+    if (v) {
+      try {
+        v.pause();
+      } catch {
+        /* ignore */
+      }
+    }
     setArrived(true);
   }
-
-  const frames = useMemo(
-    () => BEATS.map((b) => ({ ...b, img: BRAND[b.key] as BrandImage, url: brandImage(b.key) })),
-    [],
-  );
 
   const containerClass = isReplay
     ? "fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden px-6 text-center transition-opacity"
@@ -129,29 +127,33 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
       className={containerClass}
       style={isReplay ? { opacity: leaving ? 0 : 1, transitionDuration: `${FADE_MS}ms` } : undefined}
     >
-      {/* Stacked crossfading frames. Each drifts slowly (Ken Burns) so the still
-          feels alive while it holds. Only the active frame is opaque. */}
-      {frames.map((f, i) => (
-        <div
-          key={f.key}
-          aria-hidden
-          className="pointer-events-none absolute inset-0 overflow-hidden transition-opacity duration-[1500ms] ease-in-out"
-          style={{ opacity: i === index ? 1 : 0 }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={f.url}
-            alt={f.img.alt}
-            className="kb-frame h-full w-full select-none object-cover"
-            style={{
-              objectPosition: f.img.focus,
-              // A touch of golden warmth so the art feels candle-lit, not cold.
-              filter: "saturate(1.1) brightness(1.05) sepia(0.14)",
-              animation: `${i % 2 === 0 ? "kenBurnsIn" : "kenBurnsOut"} 16s ease-in-out infinite alternate`,
-            }}
-          />
-        </div>
-      ))}
+      {/* Guaranteed still behind the video: if the video is slow or fails to
+          load, the art still shows instead of a black screen. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={reduce ? openingPosterEnd() : openingPosterStart()}
+        alt=""
+        aria-hidden
+        className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+        style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
+      />
+
+      {/* The cinematic descent. Plays once, muted + inline, and holds its final
+          frame (the base of the trunk) when it ends. Skipped for reduced-motion. */}
+      {!reduce && (
+        <video
+          ref={videoRef}
+          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
+          src={openingVideo()}
+          poster={openingPosterStart()}
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          onEnded={() => setArrived(true)}
+          style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
+        />
+      )}
 
       {/* Golden wash — bathes the whole frame in warm, sunset/firelight tones. */}
       <div
@@ -164,7 +166,7 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
         }}
       />
 
-      {/* Soft, warm legibility vignette — lighter than before so the art glows. */}
+      {/* Soft, warm legibility vignette. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
@@ -174,15 +176,15 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
         }}
       />
 
-      {/* Narrative beat text (frames 0–3). Re-keyed per index so it re-animates. */}
-      {!arrived && (
+      {/* Narrative beat text. Re-keyed per line so it re-animates as it enters. */}
+      {!arrived && lineIndex >= 0 && (
         <div className="relative z-10 flex max-w-3xl flex-col items-center">
           <p
-            key={index}
+            key={lineIndex}
             className="beat-rise max-w-xl font-serif text-2xl leading-snug text-parchment [text-shadow:0_2px_18px_rgba(0,0,0,0.75)] md:text-4xl"
             style={{ animation: "beatRise 1200ms ease-out both" }}
           >
-            {frames[index].line}
+            {LINES[lineIndex]}
           </p>
         </div>
       )}
@@ -253,11 +255,11 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
       {/* Progress dots — a quiet sense of how far the journey has come. */}
       {!arrived && (
         <div className="absolute bottom-8 left-1/2 z-20 flex -translate-x-1/2 gap-2">
-          {BEATS.slice(0, ARRIVAL).map((_, i) => (
+          {LINES.map((_, i) => (
             <span
               key={i}
               className="h-1.5 rounded-full bg-parchment transition-all duration-500"
-              style={{ width: i === index ? 24 : 8, opacity: i === index ? 0.9 : 0.35 }}
+              style={{ width: i === lineIndex ? 24 : 8, opacity: i === lineIndex ? 0.9 : 0.35 }}
             />
           ))}
         </div>
