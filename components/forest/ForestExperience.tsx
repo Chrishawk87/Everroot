@@ -43,6 +43,35 @@ const COMMENTABLE_KINDS = new Set([
   "MEMORY_MOMENT",
 ]);
 
+// One entry in the notification bell: a comment someone else left on one of
+// the current user's memories. `mediaType` decides whether tapping it opens the
+// full-screen photo/video viewer or the memory's detail panel.
+interface NotifItem {
+  id: string;
+  nodeId: string;
+  authorName: string;
+  snippet: string;
+  createdAt: string;
+  nodeTitle: string;
+  kind: string;
+  mediaType: string | null;
+  unread: boolean;
+}
+
+function notifTimeAgo(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(1, Math.round((Date.now() - then) / 1000));
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 // How each freshly grown object announces itself.
 const GREW_VERB: Record<string, string> = {
   LEAF: "A new leaf unfurled",
@@ -78,6 +107,66 @@ export default function ForestExperience({
   // The greeting/stats card starts collapsed to a slim pill so it never blocks
   // the tree; tapping it expands the full dashboard card.
   const [statsOpen, setStatsOpen] = useState(false);
+  // Notification bell: comments others left on this user's memories.
+  const [notifs, setNotifs] = useState<NotifItem[]>([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  // Pull the feed on mount and refresh it quietly every minute so the bell
+  // reflects new comments without a page reload.
+  const loadNotifs = useCallback(() => {
+    fetch("/api/notifications")
+      .then((r) => (r.ok ? (r.json() as Promise<{ items: NotifItem[]; unread: number }>) : null))
+      .then((d) => {
+        if (d) {
+          setNotifs(d.items ?? []);
+          setNotifUnread(d.unread ?? 0);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadNotifs();
+    const t = setInterval(loadNotifs, 60000);
+    return () => clearInterval(t);
+  }, [loadNotifs]);
+
+  // Opening the list clears the badge (marks everything seen on the server).
+  const openNotifs = useCallback(() => {
+    setNotifOpen(true);
+    if (notifUnread > 0) {
+      setNotifUnread(0);
+      setNotifs((prev) => prev.map((n) => ({ ...n, unread: false })));
+      fetch("/api/notifications", { method: "POST" }).catch(() => {});
+    }
+  }, [notifUnread]);
+
+  // Tapping a notification jumps straight to that memory: a photo/video opens
+  // full-screen; a voice/text memory opens its detail panel.
+  const openNotifTarget = useCallback(
+    (n: NotifItem) => {
+      setNotifOpen(false);
+      const node = graph.nodes.find((x) => x.id === n.nodeId) ?? null;
+      if (n.mediaType === "photo" || n.mediaType === "video") {
+        setMediaNode(
+          node ?? {
+            id: n.nodeId,
+            kind: n.kind as ForestNodeDTO["kind"],
+            title: n.nodeTitle,
+            summary: null,
+            epoch: null,
+            score: 0,
+            createdAt: n.createdAt,
+            data: { mediaType: n.mediaType },
+          },
+        );
+      } else if (node) {
+        setSelected(node);
+      }
+    },
+    [graph.nodes],
+  );
 
   // Time-of-day greeting, resolved after mount to avoid a hydration mismatch.
   useEffect(() => {
@@ -212,9 +301,13 @@ export default function ForestExperience({
             <IconButton label="Search" onClick={() => setSheet("tree")}>
               {ICONS.search}
             </IconButton>
-            <IconButton label="Notifications" onClick={() => setToast("You're all caught up.")}>
+            <IconButton label="Notifications" onClick={openNotifs}>
               {ICONS.bell}
-              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-canopy-light" />
+              {notifUnread > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-fruit px-1 text-[10px] font-semibold leading-none text-black">
+                  {notifUnread > 9 ? "9+" : notifUnread}
+                </span>
+              ) : null}
             </IconButton>
             <button
               onClick={() => setSheet("more")}
@@ -253,34 +346,110 @@ export default function ForestExperience({
           so the viewer doesn't need to know the recording id. */}
       {mediaNode ? (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4 animate-[fadeIn_0.25s_ease-out]"
+          className="fixed inset-0 z-[60] flex justify-center overflow-y-auto bg-black/90 p-4 animate-[fadeIn_0.25s_ease-out]"
           onClick={() => setMediaNode(null)}
         >
           <button
             aria-label="Close"
             onClick={() => setMediaNode(null)}
-            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/60 text-xl text-parchment backdrop-blur pt-safe"
+            className="fixed right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/60 text-xl text-parchment backdrop-blur pt-safe"
           >
             ✕
           </button>
-          {mediaNode.data?.mediaType === "video" ? (
-            <video
-              src={`/api/memory/${mediaNode.id}/media`}
-              controls
-              autoPlay
-              playsInline
-              onClick={(e) => e.stopPropagation()}
-              className="max-h-[85vh] max-w-full rounded-lg shadow-2xl"
-            />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`/api/memory/${mediaNode.id}/media`}
-              alt={mediaNode.title ?? "Memory"}
-              onClick={(e) => e.stopPropagation()}
-              className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl"
-            />
-          )}
+          {/* Media on top, its comments below — both scroll together on mobile.
+              Clicks inside the column are swallowed so only the backdrop / ✕
+              close the viewer. */}
+          <div
+            className="my-auto flex w-full max-w-md flex-col items-center py-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {mediaNode.data?.mediaType === "video" ? (
+              <video
+                src={`/api/memory/${mediaNode.id}/media`}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[70vh] max-w-full rounded-lg shadow-2xl"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/memory/${mediaNode.id}/media`}
+                alt={mediaNode.title ?? "Memory"}
+                className="max-h-[70vh] max-w-full rounded-lg object-contain shadow-2xl"
+              />
+            )}
+            {mediaNode.title ? (
+              <h2 className="mt-4 w-full text-center font-serif text-lg text-parchment">
+                {mediaNode.title}
+              </h2>
+            ) : null}
+            {/* The same likes + comments thread as the memory's detail card. */}
+            <div className="mt-1 w-full">
+              <MemorySocial nodeId={mediaNode.id} />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Notifications list — comments family left on this user's memories.
+          Tap one to jump straight to that photo/video (or memory). */}
+      {notifOpen ? (
+        <div
+          className="fixed inset-0 z-[55] flex justify-center bg-black/50 animate-[fadeIn_0.2s_ease-out]"
+          onClick={() => setNotifOpen(false)}
+        >
+          <div
+            className="mt-16 h-fit max-h-[70vh] w-full max-w-md overflow-y-auto rounded-2xl border border-parchment/15 bg-[#0b1710]/95 p-4 shadow-2xl backdrop-blur-xl mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="font-serif text-lg text-parchment">Notifications</h3>
+              <button
+                onClick={() => setNotifOpen(false)}
+                aria-label="Close"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-parchment/60 transition hover:text-parchment"
+              >
+                ✕
+              </button>
+            </div>
+            {notifs.length === 0 ? (
+              <p className="py-8 text-center text-sm text-parchment/50">
+                You&apos;re all caught up.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {notifs.map((n) => (
+                  <li key={n.id}>
+                    <button
+                      onClick={() => openNotifTarget(n)}
+                      className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition hover:bg-parchment/5 ${
+                        n.unread ? "bg-fruit/10" : ""
+                      }`}
+                    >
+                      {n.unread ? (
+                        <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-fruit" />
+                      ) : (
+                        <span className="mt-1.5 h-2 w-2 shrink-0" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm text-parchment/90">
+                          <span className="font-serif text-parchment">{n.authorName}</span>{" "}
+                          on <span className="italic text-parchment/70">{n.nodeTitle}</span>
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-parchment/60">
+                          {n.snippet}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] text-parchment/40">
+                          {notifTimeAgo(n.createdAt)}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       ) : null}
 

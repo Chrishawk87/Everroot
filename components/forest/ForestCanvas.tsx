@@ -2964,7 +2964,7 @@ function TreePhoto({
 
   // Size the picture to the tree (leaf-scale frames were invisible on a 22-unit
   // tree) and give it a lantern-length cord so it dangles below the foliage.
-  const fs = H * 0.045;
+  const fs = H * 0.028;
   const drop = H * 0.13;
   // Sit the label just below the hanging frame.
   const labelY = -(drop + fs * 3.6 + 0.7);

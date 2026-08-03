@@ -23,6 +23,10 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  // When this user last opened their notifications list. Comments left on their
+  // memories after this moment count as "unread" and light up the bell badge.
+  notificationsSeenAt DateTime?
+
   profile      Profile?
   nodes        ForestNode[]
   edges        ForestEdge[]
