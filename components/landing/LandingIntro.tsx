@@ -38,9 +38,9 @@ interface Beat {
 // is the "arrival" that carries the logo + ending instead of a line.
 const BEATS: Beat[] = [
   { key: "valleyVista", line: "Every life is a story worth keeping." },
-  { key: "duskPath", line: "But memory fades. Voices go quiet." },
-  { key: "valleyHero", line: "Preserve them —" },
-  { key: "trunk", line: "— before they're gone." },
+  { key: "duskPath", line: "The people we love. The moments that made us." },
+  { key: "valleyHero", line: "Their voices. Their laughter. Their words." },
+  { key: "trunk", line: "Keep them close, always." },
   { key: "reveal", line: "" },
 ];
 
@@ -145,19 +145,32 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
             className="kb-frame h-full w-full select-none object-cover"
             style={{
               objectPosition: f.img.focus,
+              // A touch of golden warmth so the art feels candle-lit, not cold.
+              filter: "saturate(1.1) brightness(1.05) sepia(0.14)",
               animation: `${i % 2 === 0 ? "kenBurnsIn" : "kenBurnsOut"} 16s ease-in-out infinite alternate`,
             }}
           />
         </div>
       ))}
 
-      {/* Warm legibility scrim so text and buttons stay readable over the art. */}
+      {/* Golden wash — bathes the whole frame in warm, sunset/firelight tones. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(120% 90% at 50% 45%, rgba(6,16,10,0.28) 0%, rgba(6,16,10,0.60) 58%, rgba(6,16,10,0.88) 100%)",
+            "radial-gradient(100% 85% at 50% 40%, rgba(255,186,102,0.24) 0%, rgba(255,150,64,0.11) 45%, rgba(60,28,10,0) 72%)",
+          mixBlendMode: "overlay",
+        }}
+      />
+
+      {/* Soft, warm legibility vignette — lighter than before so the art glows. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(120% 92% at 50% 45%, rgba(26,14,6,0.06) 0%, rgba(22,12,5,0.42) 58%, rgba(16,9,4,0.76) 100%)",
         }}
       />
 
@@ -203,9 +216,9 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
           ) : (
             <>
               <p className="mb-10 max-w-xl text-lg text-parchment/90 [text-shadow:0_2px_16px_rgba(0,0,0,0.6)]">
-                The people you love won&apos;t be here forever. Capture their voice and
-                their stories today — and grow a living legacy your grandchildren can
-                walk through.
+                Gather the voices and stories of the people you love, in their own
+                words — and grow a living legacy your family can walk through for
+                generations to come.
               </p>
               <div className="flex flex-col gap-4 sm:flex-row">
                 <Link
