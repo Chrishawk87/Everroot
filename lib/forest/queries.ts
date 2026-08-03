@@ -498,6 +498,11 @@ export interface CategoryItem {
   title: string;
   summary: string | null;
   transcript: string | null;
+  // AI-polished first-person story (null when unavailable).
+  story: string | null;
+  // True when this memory's text was rewritten by AI — drives the "Polished by
+  // AI" badge in the UI.
+  aiPolished: boolean;
   question: string | null;
   epoch: string | null;
   createdAt: string;
@@ -610,6 +615,8 @@ export async function getCategoryContents(
       title: n.title,
       summary: n.summary,
       transcript: rec?.transcript ?? null,
+      story: rec?.story ?? null,
+      aiPolished: Boolean(rec?.story && rec.story.trim().length > 0),
       question: rec?.question ?? null,
       epoch: n.epoch,
       createdAt: n.createdAt.toISOString(),

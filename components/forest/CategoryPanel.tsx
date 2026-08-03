@@ -10,6 +10,8 @@ interface CategoryItem {
   title: string;
   summary: string | null;
   transcript: string | null;
+  story: string | null;
+  aiPolished: boolean;
   question: string | null;
   epoch: string | null;
   createdAt: string;
@@ -438,8 +440,18 @@ export default function CategoryPanel({
                     })()
                   ) : null}
 
-                  {/* Written words — transcript preferred, else the summary */}
-                  {it.transcript && it.transcript.trim().length > 0 ? (
+                  {/* Written words — the AI-polished story if we have one,
+                      otherwise the raw transcript, otherwise the summary. */}
+                  {it.story && it.story.trim().length > 0 ? (
+                    <>
+                      <span className="mt-3 inline-flex items-center gap-1 rounded-full border border-canopy/50 bg-canopy/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-canopy-light">
+                        ✨ Polished by AI
+                      </span>
+                      <p className="mt-2 whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/85">
+                        {it.story}
+                      </p>
+                    </>
+                  ) : it.transcript && it.transcript.trim().length > 0 ? (
                     <p className="mt-3 whitespace-pre-wrap font-serif text-sm leading-6 text-parchment/85">
                       {it.transcript}
                     </p>
