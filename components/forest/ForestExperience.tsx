@@ -28,7 +28,11 @@ const ForestCanvas = dynamic(() => import("./ForestCanvas"), {
   ),
 });
 
-const ForestIntro = dynamic(() => import("./ForestIntro"), { ssr: false });
+// The in-forest opening (first visit + "Replay the opening") plays the same
+// cinematic photo journey as the logged-out landing page, in "replay" mode —
+// so it ends on a warm welcome that dismisses into the forest rather than a
+// signup CTA. (The old 3D seed-birth scene lives in ./ForestIntro.)
+const OpeningJourney = dynamic(() => import("@/components/landing/LandingIntro"), { ssr: false });
 
 const INTRO_SEEN_KEY = "everroot_intro_seen";
 
@@ -743,7 +747,11 @@ export default function ForestExperience({
 
       {/* Cinematic opening — plays over everything. */}
       {showIntro ? (
-        <ForestIntro displayName={graph.profile.displayName} onComplete={completeIntro} />
+        <OpeningJourney
+          mode="replay"
+          displayName={graph.profile.displayName}
+          onComplete={completeIntro}
+        />
       ) : null}
     </div>
   );

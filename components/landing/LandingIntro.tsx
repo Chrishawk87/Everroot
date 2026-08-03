@@ -5,21 +5,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { brandImage, BRAND, type BrandImage } from "@/lib/brand";
 
 /**
- * The cinematic entry experience — a visitor's very first moment with EverRoot.
+ * The cinematic entry experience — the slow crossfading journey up to the great
+ * tree that lands EverRoot's emotional pitch.
  *
- * It auto-plays a slow crossfading journey through the hero stills: a distant
- * valley, the path in, arriving at the great tree, looking up its trunk, and
- * the crown revealed. Staged text lands the emotional throughline — capture
- * your family's stories BEFORE they're gone — and the journey settles onto the
- * logo and call-to-action over the final frame.
+ * It runs in two modes:
+ *  - "landing" (default): the marketing surface shown to logged-OUT visitors.
+ *    It settles on the logo, the pitch, and the signup / login call-to-action.
+ *  - "replay": the same journey played as an overlay INSIDE the forest — for a
+ *    first visit and for the "Replay the opening" button. Instead of a signup
+ *    CTA it settles on a warm welcome and then dismisses into the forest
+ *    (via onComplete), so a signed-in person is never shown a signup button.
+ *
+ * The journey itself (frames + staged text) is identical in both modes so the
+ * brand moment is consistent everywhere it appears.
  *
  * Design choices:
- *  - Auto-play but always SKIPPABLE ("Enter" jumps straight to the CTA) so no
- *    one is ever trapped watching it.
+ *  - Auto-plays but is always SKIPPABLE so no one is trapped watching it.
  *  - Uses the existing brand stills (served from the CDN via brandImage), so it
  *    ships with no new assets and stays light on mobile.
  *  - Honors prefers-reduced-motion: the journey is skipped and the final frame
- *    with the CTA is shown immediately (see globals.css .kb-frame overrides).
+ *    is shown immediately (see globals.css .kb-frame overrides).
  */
 
 interface Beat {
@@ -30,7 +35,7 @@ interface Beat {
 }
 
 // The narrative arc. Frames 0–3 carry a line of copy; the final frame (reveal)
-// is the "arrival" that carries the logo + CTA instead of a line.
+// is the "arrival" that carries the logo + ending instead of a line.
 const BEATS: Beat[] = [
   { key: "valleyVista", line: "Every life is a story worth keeping." },
   { key: "duskPath", line: "But memory fades. Voices go quiet." },
@@ -39,15 +44,29 @@ const BEATS: Beat[] = [
   { key: "reveal", line: "" },
 ];
 
-const ARRIVAL = BEATS.length - 1; // index of the final CTA frame
+const ARRIVAL = BEATS.length - 1; // index of the final frame
 const HOLD_MS = 3200; // how long each narrative beat holds before advancing
+const REPLAY_LINGER_MS = 3600; // how long the welcome holds before auto-dismiss
+const FADE_MS = 1000; // overlay fade-out on dismiss (replay mode)
 
-export default function LandingIntro() {
+interface Props {
+  /** "landing" = marketing page (signup CTA). "replay" = in-forest overlay. */
+  mode?: "landing" | "replay";
+  /** Personalizes the replay welcome ("Welcome home, {name}."). */
+  displayName?: string;
+  /** Replay mode only: called once the overlay should be dismissed. */
+  onComplete?: () => void;
+}
+
+export default function LandingIntro({ mode = "landing", displayName, onComplete }: Props) {
+  const isReplay = mode === "replay";
   const [index, setIndex] = useState(0);
   const [arrived, setArrived] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const done = useRef(false);
 
-  // Respect reduced-motion: skip the journey, land on the CTA immediately.
+  // Respect reduced-motion: skip the journey, land on the final frame.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -70,7 +89,24 @@ export default function LandingIntro() {
     };
   }, [index, arrived]);
 
-  // "Enter" / skip — jump straight to the tree and the CTA.
+  // Replay mode: once we arrive, linger on the welcome, then dismiss.
+  useEffect(() => {
+    if (!isReplay || !arrived) return;
+    const t = setTimeout(finish, REPLAY_LINGER_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReplay, arrived]);
+
+  // Replay mode: fade the overlay out and hand control back to the forest.
+  function finish() {
+    if (done.current) return;
+    done.current = true;
+    if (timer.current) clearTimeout(timer.current);
+    setLeaving(true);
+    setTimeout(() => onComplete?.(), FADE_MS);
+  }
+
+  // Landing mode: "Enter" / skip jumps straight to the tree and the CTA.
   function enter() {
     if (timer.current) clearTimeout(timer.current);
     setIndex(ARRIVAL);
@@ -82,8 +118,17 @@ export default function LandingIntro() {
     [],
   );
 
+  const containerClass = isReplay
+    ? "fixed inset-0 z-50 flex flex-col items-center justify-center overflow-hidden px-6 text-center transition-opacity"
+    : "relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 text-center";
+
+  const welcomeName = displayName?.trim();
+
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 text-center">
+    <main
+      className={containerClass}
+      style={isReplay ? { opacity: leaving ? 0 : 1, transitionDuration: `${FADE_MS}ms` } : undefined}
+    >
       {/* Stacked crossfading frames. Each drifts slowly (Ken Burns) so the still
           feels alive while it holds. Only the active frame is opaque. */}
       {frames.map((f, i) => (
@@ -129,7 +174,7 @@ export default function LandingIntro() {
         </div>
       )}
 
-      {/* Arrival: logo + message + call-to-action over the final frame. */}
+      {/* Arrival. Landing → logo + pitch + signup CTA. Replay → warm welcome. */}
       {arrived && (
         <div
           className="cta-settle relative z-10 flex max-w-3xl flex-col items-center"
@@ -141,25 +186,43 @@ export default function LandingIntro() {
             alt="EverRoot — the living legacy forest"
             className="mb-8 w-[320px] max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.7)] md:w-[420px]"
           />
-          <p className="mb-10 max-w-xl text-lg text-parchment/90 [text-shadow:0_2px_16px_rgba(0,0,0,0.6)]">
-            The people you love won&apos;t be here forever. Capture their voice and
-            their stories today — and grow a living legacy your grandchildren can
-            walk through.
-          </p>
-          <div className="flex flex-col gap-4 sm:flex-row">
-            <Link
-              href="/signup"
-              className="rounded-full bg-canopy px-8 py-3 font-sans text-base font-semibold text-white transition hover:bg-canopy-light"
-            >
-              Plant your seed
-            </Link>
-            <Link
-              href="/login"
-              className="rounded-full border border-parchment/30 px-8 py-3 font-sans text-base font-semibold text-parchment transition hover:border-parchment/60"
-            >
-              Return to your forest
-            </Link>
-          </div>
+
+          {isReplay ? (
+            <>
+              <p className="mb-10 max-w-xl font-serif text-2xl text-parchment [text-shadow:0_2px_16px_rgba(0,0,0,0.6)] md:text-3xl">
+                Welcome home{welcomeName ? `, ${welcomeName}` : ""}.
+              </p>
+              <button
+                type="button"
+                onClick={finish}
+                className="rounded-full bg-canopy px-8 py-3 font-sans text-base font-semibold text-white transition hover:bg-canopy-light"
+              >
+                Enter your forest &rarr;
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="mb-10 max-w-xl text-lg text-parchment/90 [text-shadow:0_2px_16px_rgba(0,0,0,0.6)]">
+                The people you love won&apos;t be here forever. Capture their voice and
+                their stories today — and grow a living legacy your grandchildren can
+                walk through.
+              </p>
+              <div className="flex flex-col gap-4 sm:flex-row">
+                <Link
+                  href="/signup"
+                  className="rounded-full bg-canopy px-8 py-3 font-sans text-base font-semibold text-white transition hover:bg-canopy-light"
+                >
+                  Plant your seed
+                </Link>
+                <Link
+                  href="/login"
+                  className="rounded-full border border-parchment/30 px-8 py-3 font-sans text-base font-semibold text-parchment transition hover:border-parchment/60"
+                >
+                  Return to your forest
+                </Link>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -167,10 +230,10 @@ export default function LandingIntro() {
       {!arrived && (
         <button
           type="button"
-          onClick={enter}
+          onClick={isReplay ? finish : enter}
           className="absolute right-5 top-5 z-20 rounded-full border border-parchment/25 bg-black/20 px-4 py-2 font-sans text-sm text-parchment/80 backdrop-blur-sm transition hover:border-parchment/50 hover:text-parchment pt-safe"
         >
-          Enter the forest &rarr;
+          {isReplay ? "Skip \u203a" : "Enter the forest \u2192"}
         </button>
       )}
 
