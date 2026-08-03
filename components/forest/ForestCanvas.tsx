@@ -1167,7 +1167,9 @@ export default function ForestCanvas({ graph, selectedId, focusId, onSelect, mem
         minDistance={H * 0.6}
         maxDistance={H * 6}
         minPolarAngle={0.25}
-        maxPolarAngle={Math.PI / 1.3}
+        // Stop the orbit at the horizon so the camera can no longer dip beneath
+        // the surface to peer up under the roots — the view stays above ground.
+        maxPolarAngle={Math.PI / 2}
         target={[0, H * 0.5, 0]}
       />
       <CameraRig focusPos={focusPos} />
