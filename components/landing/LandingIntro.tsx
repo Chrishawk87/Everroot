@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { openingVideo, openingPosterStart, openingPosterEnd } from "@/lib/brand";
+import { openingVideo, openingPosterStart, openingPosterEnd, openingVoice } from "@/lib/brand";
 
 /**
  * The cinematic entry experience — a single continuous descent from the dawn
@@ -17,29 +17,38 @@ import { openingVideo, openingPosterStart, openingPosterEnd } from "@/lib/brand"
  *    CTA it settles on a warm welcome and then dismisses into the forest (via
  *    onComplete), so a signed-in person is never shown a signup button.
  *
- * The descent itself (a ~10s video authored in Higgsfield) plays once and holds
- * its final frame; the four warm lines fade through over it, then the logo +
- * ending settle in.
+ * The descent itself (a ~10s video authored in Higgsfield) is slowed to breathe
+ * with the narration and holds its final frame; a warm, emotional voiceover
+ * (Imogen, ~18.6s) reads the lines while they fade through over it, then the
+ * logo + ending settle in.
+ *
+ * Because browsers block sound without a user gesture, the landing surface waits
+ * on a gentle "Begin" tap before it starts the video + voiceover together. The
+ * replay overlay is reached from a click inside the forest, so it starts itself.
  *
  * Design choices:
- *  - Auto-plays (muted, inline) but is always SKIPPABLE so no one is trapped.
- *  - Honors prefers-reduced-motion: the video is skipped and the final still is
- *    shown immediately with the ending already settled.
+ *  - Plays inline WITH sound (after the Begin gesture); always SKIPPABLE so no
+ *    one is trapped.
+ *  - Honors prefers-reduced-motion: the video + voiceover are skipped and the
+ *    final still is shown immediately with the ending already settled.
  */
 
-// The four lines that fade through over the descent — the same warm words as
-// the original opening.
+// The narration, broken into the beats that fade through on screen — paced to
+// the ~18.6s voiceover so each line lingers as it is spoken.
 const LINES = [
-  "Every life is a story worth keeping.",
-  "The people we love. The moments that made us.",
-  "Their voices. Their laughter. Their words.",
-  "Keep them close, always.",
+  "Every life leaves a story.",
+  "Every voice carries a legacy.",
+  "Every memory deserves to live on.",
+  "Preserve the people you love \u2014",
+  "their stories, their laughter, their wisdom, and the moments that made them unforgettable.",
+  "Keep them close, for generations to come.",
 ];
 
-// When each line enters (ms), paced to the ~10s descent, and when the descent
-// settles and the logo / ending appear.
-const LINE_CUES = [700, 3000, 5400, 7700];
-const ARRIVE_MS = 10200; // safety fallback if the video's onEnded never fires
+// When each line enters (ms), timed to where it falls in the spoken voiceover,
+// and the safety arrival if the audio's onEnded never fires.
+const LINE_CUES = [400, 2600, 5000, 7800, 10200, 15600];
+const ARRIVE_MS = 19000; // safety fallback if the audio's onEnded never fires
+const VIDEO_RATE = 0.6; // slow the ~10s descent to ~16.7s so it breathes with the read
 const REPLAY_LINGER_MS = 3600; // how long the welcome holds before auto-dismiss
 const FADE_MS = 1000; // overlay fade-out on dismiss (replay mode)
 
@@ -55,12 +64,35 @@ interface Props {
 export default function LandingIntro({ mode = "landing", displayName, onComplete }: Props) {
   const isReplay = mode === "replay";
   const [lineIndex, setLineIndex] = useState(-1); // -1 = no line showing yet
+  const [started, setStarted] = useState(false); // has the descent + VO begun?
   const [arrived, setArrived] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [reduce, setReduce] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const done = useRef(false);
+
+  // Start the descent + voiceover together. Requires a user gesture on the
+  // landing surface (browsers block sound otherwise); replay is reached from a
+  // click so it can start itself on mount.
+  function startExperience() {
+    if (started || reduce || arrived) return;
+    setStarted(true);
+    const v = videoRef.current;
+    if (v) {
+      v.playbackRate = VIDEO_RATE;
+      v.play().catch(() => {
+        /* ignore autoplay rejection */
+      });
+    }
+    const a = audioRef.current;
+    if (a) {
+      a.play().catch(() => {
+        /* sound may be blocked; the visual descent still plays */
+      });
+    }
+  }
 
   // Respect reduced-motion: skip the descent, land on the settled final still.
   useEffect(() => {
@@ -72,10 +104,16 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
     }
   }, []);
 
-  // Drive the word beats + a safety arrival on a fixed schedule paced to the
-  // descent. (The video's onEnded is the primary trigger for arrival.)
+  // Replay mode is reached from a click, so it may start itself right away.
   useEffect(() => {
-    if (reduce || arrived) return;
+    if (isReplay && !reduce) startExperience();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReplay, reduce]);
+
+  // Once started, drive the word beats + a safety arrival on a schedule timed to
+  // the voiceover. (The audio's onEnded is the primary trigger for arrival.)
+  useEffect(() => {
+    if (!started || reduce || arrived) return;
     const t = timers.current;
     LINE_CUES.forEach((cue, i) => t.push(setTimeout(() => setLineIndex(i), cue)));
     t.push(setTimeout(() => setArrived(true), ARRIVE_MS));
@@ -83,7 +121,7 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
       t.forEach(clearTimeout);
       timers.current = [];
     };
-  }, [reduce, arrived]);
+  }, [started, reduce, arrived]);
 
   // Replay mode: once we arrive, linger on the welcome, then dismiss.
   useEffect(() => {
@@ -102,13 +140,21 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
     setTimeout(() => onComplete?.(), FADE_MS);
   }
 
-  // "Enter" / skip jumps straight to the settled ending.
+  // "Enter" / skip jumps straight to the settled ending — stopping video + VO.
   function enter() {
     timers.current.forEach(clearTimeout);
     const v = videoRef.current;
     if (v) {
       try {
         v.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+    const a = audioRef.current;
+    if (a) {
+      try {
+        a.pause();
       } catch {
         /* ignore */
       }
@@ -138,20 +184,31 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
         style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
       />
 
-      {/* The cinematic descent. Plays once, muted + inline, and holds its final
-          frame (the base of the trunk) when it ends. Skipped for reduced-motion. */}
+      {/* The cinematic descent. Slowed to breathe with the narration, plays once
+          (started with the voiceover) and holds its final frame (the base of the
+          trunk) when it ends. Skipped for reduced-motion. */}
       {!reduce && (
         <video
           ref={videoRef}
           className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
           src={openingVideo()}
           poster={openingPosterStart()}
-          autoPlay
           muted
           playsInline
           preload="auto"
-          onEnded={() => setArrived(true)}
           style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
+        />
+      )}
+
+      {/* The emotional voiceover — read over the descent. Started together with
+          the video (needs a user gesture for sound), and its ending is the
+          primary trigger for the settled arrival. Skipped for reduced-motion. */}
+      {!reduce && (
+        <audio
+          ref={audioRef}
+          src={openingVoice()}
+          preload="auto"
+          onEnded={() => setArrived(true)}
         />
       )}
 
@@ -241,8 +298,34 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
         </div>
       )}
 
-      {/* Skip / Enter — always available so no one is trapped in the intro. */}
-      {!arrived && (
+      {/* The gentle "Begin" gate (landing only). A browser won't play sound
+          without a user gesture, so the descent + voiceover wait on this tap. */}
+      {!isReplay && !started && !reduce && !arrived && (
+        <div
+          className="cta-settle relative z-10 flex max-w-3xl flex-col items-center"
+          style={{ animation: "ctaSettle 900ms ease-out both" }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/everroot-logo-transparent.png"
+            alt="EverRoot — the living legacy forest"
+            className="mb-8 w-[300px] max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.7)] md:w-[380px]"
+          />
+          <button
+            type="button"
+            onClick={startExperience}
+            className="rounded-full bg-canopy px-10 py-3.5 font-sans text-base font-semibold text-white transition hover:bg-canopy-light"
+          >
+            Begin
+          </button>
+          <p className="mt-4 font-sans text-xs uppercase tracking-[0.2em] text-parchment/60">
+            Best with sound on
+          </p>
+        </div>
+      )}
+
+      {/* Skip / Enter — available once begun so no one is trapped in the intro. */}
+      {started && !arrived && (
         <button
           type="button"
           onClick={isReplay ? finish : enter}
@@ -253,7 +336,7 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
       )}
 
       {/* Progress dots — a quiet sense of how far the journey has come. */}
-      {!arrived && (
+      {started && !arrived && (
         <div className="absolute bottom-8 left-1/2 z-20 flex -translate-x-1/2 gap-2">
           {LINES.map((_, i) => (
             <span

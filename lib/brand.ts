@@ -104,6 +104,15 @@ export const OPENING = {
       "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260803_204121_994df36c-d6a5-40a4-a464-e4053f03fe50.png",
     localPath: "/everroot-opening-end.jpg",
   },
+  /**
+   * The emotional voiceover read over the descent (Imogen, ElevenLabs engine,
+   * ~18.6s). Reads the opening lines like telling a story while the video plays.
+   */
+  voice: {
+    cdnUrl:
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_021718_ba5dc99f-b951-4472-b586-e499c44e1a97.mp3",
+    localPath: "/everroot-opening-vo.mp3",
+  },
 } as const;
 
 /** URL for the opening descent video (self-hosted when available). */
@@ -119,4 +128,9 @@ export function openingPosterStart(): string {
 /** URL for the opening's final frame (settled arrival / reduced-motion still). */
 export function openingPosterEnd(): string {
   return SELF_HOSTED ? OPENING.posterEnd.localPath : OPENING.posterEnd.cdnUrl;
+}
+
+/** URL for the opening's emotional voiceover (self-hosted when available). */
+export function openingVoice(): string {
+  return SELF_HOSTED ? OPENING.voice.localPath : OPENING.voice.cdnUrl;
 }
