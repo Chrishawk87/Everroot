@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { openingVideo, openingPosterStart, openingPosterEnd, openingVoice } from "@/lib/brand";
+import {
+  openingVideo,
+  openingVideoTail,
+  openingPosterStart,
+  openingPosterEnd,
+  openingVoice,
+} from "@/lib/brand";
 
 /**
  * The cinematic entry experience — a single continuous descent from the dawn
@@ -72,17 +78,21 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
   const [leaving, setLeaving] = useState(false);
   const [reduce, setReduce] = useState(false);
   const [drift, setDrift] = useState(false); // slow push-in once begun
+  const [tailOn, setTailOn] = useState(false); // continuation clip visible/playing
   const videoRef = useRef<HTMLVideoElement>(null);
+  const tailVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const done = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const padStopRef = useRef<(() => void) | null>(null);
 
-  // A soft, warm pad — a low C-major chord under the voiceover so it has
-  // something to echo off of. Built with Web Audio (no licensed track); the
-  // Begin gesture unlocks the AudioContext. It swells in gently, breathes with
-  // a slow LFO, and never overpowers the voice (peaks ~0.06 gain).
+  // A soft, gentle melody under the voiceover — a slow music-box lullaby in C
+  // major, so the voice has something warm to echo off of. Built with Web Audio
+  // (no licensed track); the Begin gesture unlocks the AudioContext. Each note
+  // is a soft, bell-like pluck that decays and rings through a warm delay, so
+  // it reads as a tender melody, never a sustained drone. It stays well under
+  // the voice.
   function startPad() {
     if (audioCtxRef.current) return;
     try {
@@ -94,40 +104,74 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
 
       const master = ctx.createGain();
       master.gain.setValueAtTime(0.0001, ctx.currentTime);
-      master.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 4);
-
-      const filter = ctx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.value = 700;
-      filter.Q.value = 0.5;
-      filter.connect(master);
+      master.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 3);
       master.connect(ctx.destination);
 
-      // Warm low C-major chord: C3, E3, G3, C4.
-      const freqs = [130.81, 164.81, 196.0, 261.63];
-      const oscs: OscillatorNode[] = [];
-      freqs.forEach((f, i) => {
-        const o = ctx.createOscillator();
-        o.type = i === 0 ? "sine" : "triangle";
-        o.frequency.value = f;
-        const g = ctx.createGain();
-        g.gain.value = i === 0 ? 0.5 : 0.28;
-        o.connect(g);
-        g.connect(filter);
-        o.start();
-        oscs.push(o);
-      });
+      // A round, mellow tone bus — soft low-pass so nothing is brittle.
+      const tone = ctx.createBiquadFilter();
+      tone.type = "lowpass";
+      tone.frequency.value = 1400;
+      tone.Q.value = 0.4;
+      tone.connect(master);
 
-      // A slow breath on the overall level.
-      const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.08;
-      const lfoGain = ctx.createGain();
-      lfoGain.gain.value = 0.02;
-      lfo.connect(lfoGain);
-      lfoGain.connect(master.gain);
-      lfo.start();
+      // A gentle echo so each note lingers — "something to echo off of".
+      const delay = ctx.createDelay();
+      delay.delayTime.value = 0.36;
+      const feedback = ctx.createGain();
+      feedback.gain.value = 0.3;
+      const wet = ctx.createGain();
+      wet.gain.value = 0.35;
+      tone.connect(delay);
+      delay.connect(feedback);
+      feedback.connect(delay);
+      delay.connect(wet);
+      wet.connect(master);
+
+      // A soft, bell-like plucked note that swells fast and decays away.
+      const voice = (freq: number, when: number) => {
+        const o = ctx.createOscillator();
+        o.type = "sine";
+        o.frequency.value = freq;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, when);
+        g.gain.exponentialRampToValueAtTime(0.1, when + 0.08);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + 2.4);
+        o.connect(g);
+        g.connect(tone);
+        o.start(when);
+        o.stop(when + 2.6);
+      };
+
+      // A slow, tender lullaby phrase (C major), spaced so it breathes.
+      const C4 = 261.63,
+        D4 = 293.66,
+        E4 = 329.63,
+        G4 = 392.0,
+        A4 = 440.0,
+        C5 = 523.25;
+      const phrase: { t: number; f: number }[] = [
+        { t: 0.0, f: E4 },
+        { t: 1.6, f: G4 },
+        { t: 3.2, f: C5 },
+        { t: 5.0, f: A4 },
+        { t: 6.8, f: G4 },
+        { t: 8.4, f: E4 },
+        { t: 10.0, f: D4 },
+        { t: 11.6, f: C4 },
+      ];
+      const PHRASE_LEN = 13.4;
+      const schedulePhrase = (base: number) => phrase.forEach((n) => voice(n.f, base + n.t));
+
+      schedulePhrase(ctx.currentTime + 0.3);
+      let nextBase = ctx.currentTime + 0.3 + PHRASE_LEN;
+      const loop = setInterval(() => {
+        if (!audioCtxRef.current) return;
+        schedulePhrase(nextBase);
+        nextBase += PHRASE_LEN;
+      }, PHRASE_LEN * 1000);
 
       padStopRef.current = () => {
+        clearInterval(loop);
         const now = ctx.currentTime;
         try {
           master.gain.cancelScheduledValues(now);
@@ -137,24 +181,12 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
           /* ignore */
         }
         setTimeout(() => {
-          oscs.forEach((o) => {
-            try {
-              o.stop();
-            } catch {
-              /* ignore */
-            }
-          });
-          try {
-            lfo.stop();
-          } catch {
-            /* ignore */
-          }
           try {
             ctx.close();
           } catch {
             /* ignore */
           }
-        }, 1700);
+        }, 1800);
         audioCtxRef.current = null;
         padStopRef.current = null;
       };
@@ -281,36 +313,68 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
       className={containerClass}
       style={isReplay ? { opacity: leaving ? 0 : 1, transitionDuration: `${FADE_MS}ms` } : undefined}
     >
-      {/* Guaranteed still behind the video: if the video is slow or fails to
-          load, the art still shows instead of a black screen. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={reduce ? openingPosterEnd() : openingPosterStart()}
-        alt=""
+      {/* All the moving imagery lives inside one wrapper that carries a single,
+          continuous slow push-in (the "drift"). Swapping videos inside it never
+          disturbs the zoom, so the descent → settle reads as one unbroken move. */}
+      <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
-        style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
-      />
-
-      {/* The cinematic descent. Slowed to breathe with the narration, plays once
-          (started with the voiceover) and holds its final frame (the base of the
-          trunk) when it ends. Skipped for reduced-motion. */}
-      {!reduce && (
-        <video
-          ref={videoRef}
-          className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover"
-          src={openingVideo()}
-          poster={openingPosterStart()}
-          muted
-          playsInline
-          preload="auto"
-          style={{
-            filter: "saturate(1.08) brightness(1.03) sepia(0.12)",
-            transform: drift ? "scale(1.06)" : "scale(1)",
-            transition: `transform ${DRIFT_MS}ms ease-out`,
-          }}
+        className="pointer-events-none absolute inset-0"
+        style={{
+          transform: drift ? "scale(1.06)" : "scale(1)",
+          transition: `transform ${DRIFT_MS}ms ease-out`,
+        }}
+      >
+        {/* Guaranteed still behind the video: if the video is slow or fails to
+            load, the art still shows instead of a black screen. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={reduce ? openingPosterEnd() : openingPosterStart()}
+          alt=""
+          className="absolute inset-0 h-full w-full select-none object-cover"
+          style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
         />
-      )}
+
+        {/* The cinematic descent (native 15s, plays once at 1.0x for smooth
+            frames). When it ends, the continuation clip fades in seamlessly so
+            the motion carries through the whole voiceover. Reduced-motion skips
+            all of it and shows the settled still. */}
+        {!reduce && (
+          <video
+            ref={videoRef}
+            className="absolute inset-0 h-full w-full select-none object-cover"
+            src={openingVideo()}
+            poster={openingPosterStart()}
+            muted
+            playsInline
+            preload="auto"
+            onEnded={() => {
+              const t = tailVideoRef.current;
+              if (t) t.play().catch(() => {});
+              setTailOn(true);
+            }}
+            style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
+          />
+        )}
+
+        {/* The continuation — a gentle settle at the base of the trunk. Its first
+            frame equals the descent's last frame, so fading it in over the held
+            frame is seamless. It carries motion through the tail of the read. */}
+        {!reduce && (
+          <video
+            ref={tailVideoRef}
+            className="absolute inset-0 h-full w-full select-none object-cover"
+            src={openingVideoTail()}
+            muted
+            playsInline
+            preload="auto"
+            style={{
+              filter: "saturate(1.08) brightness(1.03) sepia(0.12)",
+              opacity: tailOn ? 1 : 0,
+              transition: "opacity 600ms ease-in-out",
+            }}
+          />
+        )}
+      </div>
 
       {/* The emotional voiceover — read over the descent. Started together with
           the video (needs a user gesture for sound), and its ending is the

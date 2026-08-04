@@ -93,6 +93,14 @@ export const OPENING = {
       "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_144838_f4a4d987-d68b-46ec-9dcd-af3629742502.mp4",
     localPath: "/everroot-opening.mp4",
   },
+  /** A ~5s continuation that begins on the descent's final frame — a gentle
+   *  settle at the base of the trunk. It plays seamlessly after the descent so
+   *  the motion runs the full length of the ~20s voiceover (no static hold). */
+  videoTail: {
+    cdnUrl:
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_153811_d592d3fd-77d7-48d4-bc21-8ab9147e028a.mp4",
+    localPath: "/everroot-opening-tail.mp4",
+  },
   /** First frame (aerial above the canopy) — the video poster + load fallback. */
   posterStart: {
     cdnUrl:
@@ -120,6 +128,11 @@ export const OPENING = {
 /** URL for the opening descent video (self-hosted when available). */
 export function openingVideo(): string {
   return SELF_HOSTED ? OPENING.video.localPath : OPENING.video.cdnUrl;
+}
+
+/** URL for the continuation clip that plays after the descent (self-hosted when available). */
+export function openingVideoTail(): string {
+  return SELF_HOSTED ? OPENING.videoTail.localPath : OPENING.videoTail.cdnUrl;
 }
 
 /** URL for the opening's first frame (poster / load fallback). */
