@@ -93,12 +93,14 @@ export const OPENING = {
       "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_144838_f4a4d987-d68b-46ec-9dcd-af3629742502.mp4",
     localPath: "/everroot-opening.mp4",
   },
-  /** A ~5s continuation that begins on the descent's final frame — a gentle
-   *  settle at the base of the trunk. It plays seamlessly after the descent so
-   *  the motion runs the full length of the ~20s voiceover (no static hold). */
+  /** A ~5s continuation that begins on the descent's final frame — a steady,
+   *  locked shot at the base of the trunk with only ambient life (lanterns,
+   *  dust motes, vein shimmer), NO new camera push. It plays seamlessly after
+   *  the descent so the motion runs the full ~20s voiceover with no static hold
+   *  and no jerky re-pan; the smooth CSS push-in carries the gentle motion. */
   videoTail: {
     cdnUrl:
-      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_153811_d592d3fd-77d7-48d4-bc21-8ab9147e028a.mp4",
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_160940_94f74bd1-83b3-4f60-a7e1-d1d2848871a0.mp4",
     localPath: "/everroot-opening-tail.mp4",
   },
   /** First frame (aerial above the canopy) — the video poster + load fallback. */

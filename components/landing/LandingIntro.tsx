@@ -422,21 +422,25 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
         </div>
       )}
 
-      {/* Arrival. Landing → logo + pitch + signup CTA. Replay → warm welcome. */}
+      {/* Arrival. Landing → logo + pitch + signup CTA. Replay → warm welcome.
+          The logo gently phases in over 3s; the message + CTA ease in just after
+          it has settled, so the ending resolves calmly rather than all at once. */}
       {arrived && (
-        <div
-          className="cta-settle relative z-10 flex max-w-3xl flex-col items-center"
-          style={{ animation: "ctaSettle 900ms ease-out both" }}
-        >
+        <div className="relative z-10 flex max-w-3xl flex-col items-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/everroot-logo-transparent.png"
             alt="EverRoot — the living legacy forest"
-            className="mb-8 w-[320px] max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.7)] md:w-[420px]"
+            className="logo-phase mb-8 w-[320px] max-w-full drop-shadow-[0_4px_24px_rgba(0,0,0,0.7)] md:w-[420px]"
+            style={{ animation: "logoPhase 3000ms ease-out both" }}
           />
 
-          {isReplay ? (
-            <>
+          <div
+            className="cta-settle flex flex-col items-center"
+            style={{ animation: "ctaSettle 900ms ease-out both", animationDelay: "2600ms" }}
+          >
+            {isReplay ? (
+              <>
               <p className="mb-10 max-w-xl font-serif text-2xl text-parchment [text-shadow:0_2px_16px_rgba(0,0,0,0.6)] md:text-3xl">
                 Welcome home{welcomeName ? `, ${welcomeName}` : ""}.
               </p>
@@ -470,7 +474,8 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
                 </Link>
               </div>
             </>
-          )}
+            )}
+          </div>
         </div>
       )}
 

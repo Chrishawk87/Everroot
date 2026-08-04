@@ -113,13 +113,24 @@ body {
   }
 }
 
+/* The EverRoot logo gently phases in at the settled ending, over 3 seconds. */
+@keyframes logoPhase {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kb-frame {
     animation: none !important;
     transform: scale(1.08) !important;
   }
   .beat-rise,
-  .cta-settle {
+  .cta-settle,
+  .logo-phase {
     animation: none !important;
   }
 }
