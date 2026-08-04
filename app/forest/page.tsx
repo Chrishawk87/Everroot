@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getForest } from "@/lib/forest/queries";
 import { getGuardianId } from "@/lib/guardianship";
+import { getAccess } from "@/lib/billing";
 import ForestExperience from "@/components/forest/ForestExperience";
 
 // The Forest is the application. After authentication the user enters directly
@@ -11,6 +12,10 @@ export const dynamic = "force-dynamic";
 export default async function ForestPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
+
+  // Trial lapsed and unpaid → the forest is gated behind the one-time unlock.
+  const access = await getAccess(session.user.id);
+  if (!access.hasAccess) redirect("/unlock");
 
   const graph = await getForest(session.user.id);
   if (!graph) {

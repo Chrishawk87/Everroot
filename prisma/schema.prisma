@@ -27,6 +27,17 @@ model User {
   // memories after this moment count as "unread" and light up the bell badge.
   notificationsSeenAt DateTime?
 
+  // --- Billing: free trial → one-time lifetime unlock -----------------------
+  // A new account gets a free trial; when it lapses the forest is locked until
+  // the owner makes a single lifetime payment. Accounts that predate billing
+  // have a NULL trialEndsAt and are grandfathered into permanent access (see
+  // lib/billing.ts accessState()). All logic lives in lib/billing.ts.
+  trialEndsAt      DateTime? // end of the free trial (set at signup)
+  lifetimeAccess   Boolean   @default(false) // true once the one-time payment clears
+  paidAt           DateTime? // when the lifetime payment completed
+  stripeCustomerId String?   // Stripe Customer id (for receipts / future use)
+  stripeSessionId  String?   // the Checkout Session that unlocked this account
+
   profile      Profile?
   nodes        ForestNode[]
   edges        ForestEdge[]

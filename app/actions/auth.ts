@@ -7,6 +7,7 @@ import { AuthError } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
 import { plantSeed, linkAccounts } from "@/lib/forest/growth-engine";
+import { startTrial } from "@/lib/billing";
 import { invites } from "@/lib/family-links";
 import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
 
@@ -75,6 +76,9 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
 
   // Every new account begins as a seed in the forest.
   await plantSeed(user.id, displayName);
+
+  // Start the free-trial clock; when it lapses the forest gates behind /unlock.
+  await startTrial(user.id);
 
   // If they arrived with an invite code, weave their new tree into the
   // inviter's family forest (both directions).

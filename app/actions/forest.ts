@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { auth, signOut } from "@/auth";
 import { grow, type InteractionType } from "@/lib/forest/growth-engine";
+import { getAccess } from "@/lib/billing";
 
 const INTERACTIONS: InteractionType[] = [
   "record_story",
@@ -40,6 +41,12 @@ export interface GrowState {
 export async function growForest(_prev: GrowState, formData: FormData): Promise<GrowState> {
   const session = await auth();
   if (!session?.user?.id) return { error: "You must be signed in" };
+
+  // Trial lapsed and unpaid → block new growth until the forest is unlocked.
+  const access = await getAccess(session.user.id);
+  if (!access.hasAccess) {
+    return { error: "Your free trial has ended. Unlock EverRoot to keep growing your forest." };
+  }
 
   const parsed = growSchema.safeParse({
     type: formData.get("type"),

@@ -8,6 +8,7 @@ import { storageConfigured, putRecording, newRecordingKey } from "@/lib/storage"
 import { aiConfigured, transcribeAudio } from "@/lib/ai";
 import { getQuestionById, MOMENT_TYPE_BY_QUESTION } from "@/lib/interview/script";
 import { rateLimit, retryAfterSeconds } from "@/lib/rate-limit";
+import { getAccess } from "@/lib/billing";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "You must be signed in" }, { status: 401 });
   }
   const userId = session.user.id;
+
+  // Trial lapsed and unpaid → block new memories until the forest is unlocked.
+  const access = await getAccess(userId);
+  if (!access.hasAccess) {
+    return NextResponse.json(
+      { error: "Your free trial has ended. Unlock EverRoot to keep adding memories.", code: "locked" },
+      { status: 402 },
+    );
+  }
 
   // Generous per-user cap so a runaway client can't hammer the DB.
   const limit = rateLimit(`answer:${userId}`, 120, 60 * 60 * 1000);
