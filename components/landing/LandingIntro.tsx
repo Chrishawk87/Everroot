@@ -34,7 +34,7 @@ import { openingVideo, openingPosterStart, openingPosterEnd, openingVoice } from
  */
 
 // The narration, broken into the beats that fade through on screen — paced to
-// the ~18.6s voiceover so each line lingers as it is spoken.
+// the ~19.6s voiceover (Arthur, "reverence") so each line lingers as it is spoken.
 const LINES = [
   "Every life leaves a story.",
   "Every voice carries a legacy.",
@@ -46,9 +46,12 @@ const LINES = [
 
 // When each line enters (ms), timed to where it falls in the spoken voiceover,
 // and the safety arrival if the audio's onEnded never fires.
-const LINE_CUES = [400, 2600, 5000, 7800, 10200, 15600];
-const ARRIVE_MS = 19000; // safety fallback if the audio's onEnded never fires
-const VIDEO_RATE = 0.6; // slow the ~10s descent to ~16.7s so it breathes with the read
+const LINE_CUES = [500, 2800, 5300, 8200, 10800, 16400];
+const ARRIVE_MS = 20200; // safety fallback if the audio's onEnded never fires
+// The descent clip is now authored at 15s, so it plays at native speed (1.0x)
+// for perfectly smooth frames; a slow continuous push-in carries the eye through
+// the settle while the closing line is spoken, easing to rest as the VO ends.
+const DRIFT_MS = 20000; // duration of the gentle push-in (covers the whole intro)
 const REPLAY_LINGER_MS = 3600; // how long the welcome holds before auto-dismiss
 const FADE_MS = 1000; // overlay fade-out on dismiss (replay mode)
 
@@ -68,10 +71,101 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
   const [arrived, setArrived] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [reduce, setReduce] = useState(false);
+  const [drift, setDrift] = useState(false); // slow push-in once begun
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const done = useRef(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const padStopRef = useRef<(() => void) | null>(null);
+
+  // A soft, warm pad — a low C-major chord under the voiceover so it has
+  // something to echo off of. Built with Web Audio (no licensed track); the
+  // Begin gesture unlocks the AudioContext. It swells in gently, breathes with
+  // a slow LFO, and never overpowers the voice (peaks ~0.06 gain).
+  function startPad() {
+    if (audioCtxRef.current) return;
+    try {
+      const Ctx =
+        window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      audioCtxRef.current = ctx;
+
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.0001, ctx.currentTime);
+      master.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 4);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 700;
+      filter.Q.value = 0.5;
+      filter.connect(master);
+      master.connect(ctx.destination);
+
+      // Warm low C-major chord: C3, E3, G3, C4.
+      const freqs = [130.81, 164.81, 196.0, 261.63];
+      const oscs: OscillatorNode[] = [];
+      freqs.forEach((f, i) => {
+        const o = ctx.createOscillator();
+        o.type = i === 0 ? "sine" : "triangle";
+        o.frequency.value = f;
+        const g = ctx.createGain();
+        g.gain.value = i === 0 ? 0.5 : 0.28;
+        o.connect(g);
+        g.connect(filter);
+        o.start();
+        oscs.push(o);
+      });
+
+      // A slow breath on the overall level.
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.08;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 0.02;
+      lfo.connect(lfoGain);
+      lfoGain.connect(master.gain);
+      lfo.start();
+
+      padStopRef.current = () => {
+        const now = ctx.currentTime;
+        try {
+          master.gain.cancelScheduledValues(now);
+          master.gain.setValueAtTime(Math.max(master.gain.value, 0.0001), now);
+          master.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+        } catch {
+          /* ignore */
+        }
+        setTimeout(() => {
+          oscs.forEach((o) => {
+            try {
+              o.stop();
+            } catch {
+              /* ignore */
+            }
+          });
+          try {
+            lfo.stop();
+          } catch {
+            /* ignore */
+          }
+          try {
+            ctx.close();
+          } catch {
+            /* ignore */
+          }
+        }, 1700);
+        audioCtxRef.current = null;
+        padStopRef.current = null;
+      };
+    } catch {
+      /* Web Audio unavailable; the voiceover still plays on its own. */
+    }
+  }
+
+  function stopPad() {
+    padStopRef.current?.();
+  }
 
   // Start the descent + voiceover together. Requires a user gesture on the
   // landing surface (browsers block sound otherwise); replay is reached from a
@@ -79,9 +173,10 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
   function startExperience() {
     if (started || reduce || arrived) return;
     setStarted(true);
+    setDrift(true); // begin the slow push-in
     const v = videoRef.current;
     if (v) {
-      v.playbackRate = VIDEO_RATE;
+      v.playbackRate = 1; // authored at 15s, so native speed = smooth frames
       v.play().catch(() => {
         /* ignore autoplay rejection */
       });
@@ -92,6 +187,7 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
         /* sound may be blocked; the visual descent still plays */
       });
     }
+    startPad();
   }
 
   // Respect reduced-motion: skip the descent, land on the settled final still.
@@ -122,6 +218,18 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
       timers.current = [];
     };
   }, [started, reduce, arrived]);
+
+  // Fade the warm pad out the moment we arrive (audio ended or skipped).
+  useEffect(() => {
+    if (arrived) stopPad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrived]);
+
+  // Safety: stop the pad if the component unmounts mid-descent.
+  useEffect(() => {
+    return () => stopPad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Replay mode: once we arrive, linger on the welcome, then dismiss.
   useEffect(() => {
@@ -196,7 +304,11 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
           muted
           playsInline
           preload="auto"
-          style={{ filter: "saturate(1.08) brightness(1.03) sepia(0.12)" }}
+          style={{
+            filter: "saturate(1.08) brightness(1.03) sepia(0.12)",
+            transform: drift ? "scale(1.06)" : "scale(1)",
+            transition: `transform ${DRIFT_MS}ms ease-out`,
+          }}
         />
       )}
 

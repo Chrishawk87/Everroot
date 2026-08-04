@@ -86,10 +86,11 @@ export function brandImage(key: keyof typeof BRAND): string {
  * SELF_HOSTED to true — everything reads through the helpers.
  */
 export const OPENING = {
-  /** The descent video itself. */
+  /** The descent video itself — authored natively at 15s so it plays at 1.0x
+   *  (smooth frames), replacing the old 10s clip that had to be slowed (juddery). */
   video: {
     cdnUrl:
-      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260803_204412_d11b56b0-f844-4a00-92d2-4ed6cf77864d.mp4",
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_144838_f4a4d987-d68b-46ec-9dcd-af3629742502.mp4",
     localPath: "/everroot-opening.mp4",
   },
   /** First frame (aerial above the canopy) — the video poster + load fallback. */
@@ -105,12 +106,13 @@ export const OPENING = {
     localPath: "/everroot-opening-end.jpg",
   },
   /**
-   * The emotional voiceover read over the descent (Imogen, ElevenLabs engine,
-   * ~18.6s). Reads the opening lines like telling a story while the video plays.
+   * The emotional voiceover read over the descent (Arthur, ElevenLabs engine,
+   * ~19.6s, "reverence" performance). Reads the opening lines with warmth and
+   * reverence, like telling a story while the video plays.
    */
   voice: {
     cdnUrl:
-      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_021718_ba5dc99f-b951-4472-b586-e499c44e1a97.mp3",
+      "https://d8j0ntlcm91z4.cloudfront.net/user_3GCNPmBJ5PVXiIZ2LrnYgU4wRKx/hf_20260804_140620_d3836c2c-df5c-47fb-a1b6-d93244c89e79.mp3",
     localPath: "/everroot-opening-vo.mp3",
   },
 } as const;
