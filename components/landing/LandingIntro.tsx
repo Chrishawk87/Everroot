@@ -487,6 +487,13 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
                   Return to your forest
                 </Link>
               </div>
+              <p className="mt-6 text-sm text-parchment/70 [text-shadow:0_2px_16px_rgba(0,0,0,0.6)]">
+                Or{" "}
+                <Link href="/gift" className="text-canopy-light underline underline-offset-2 hover:text-parchment">
+                  give EverRoot as a gift
+                </Link>{" "}
+                to someone you love.
+              </p>
             </>
             )}
           </div>
