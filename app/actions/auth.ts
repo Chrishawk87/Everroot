@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
 import { plantSeed, linkAccounts } from "@/lib/forest/growth-engine";
 import { startTrial } from "@/lib/billing";
+import { redeemGift } from "@/lib/gift";
 import { invites } from "@/lib/family-links";
 import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
 
@@ -24,6 +25,7 @@ const signupSchema = z.object({
     }),
   familyPosition: z.string().max(60).optional(),
   inviteCode: z.string().max(20).optional(),
+  giftCode: z.string().max(20).optional(),
 });
 
 export interface ActionState {
@@ -44,13 +46,15 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
     birthYear: formData.get("birthYear") || undefined,
     familyPosition: formData.get("familyPosition") || undefined,
     inviteCode: formData.get("inviteCode") || undefined,
+    giftCode: formData.get("giftCode") || undefined,
   });
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid details" };
   }
 
-  const { displayName, email, password, birthYear, familyPosition, inviteCode } = parsed.data;
+  const { displayName, email, password, birthYear, familyPosition, inviteCode, giftCode } =
+    parsed.data;
   const normalizedEmail = email.toLowerCase();
 
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
@@ -99,6 +103,12 @@ export async function signup(_prev: ActionState, formData: FormData): Promise<Ac
     }
   }
 
+  // If they arrived via a gift link, claim the prepaid lifetime unlock now — this
+  // flips their brand-new account straight to permanent access (past the trial).
+  if (giftCode) {
+    await redeemGift(giftCode, user.id);
+  }
+
   // signIn throws a redirect on success, which propagates out of the action.
   await signIn("credentials", {
     email: normalizedEmail,
@@ -116,11 +126,17 @@ export async function login(_prev: ActionState, formData: FormData): Promise<Act
     return { error: "Too many attempts. Please wait a few minutes and try again." };
   }
 
+  // A `next` field lets callers (e.g. the gift redeem flow) send the user onward
+  // after login. Only same-site relative paths are honored, never an off-site URL.
+  const nextRaw = String(formData.get("next") ?? "");
+  const redirectTo =
+    nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/forest";
+
   try {
     await signIn("credentials", {
       email: String(formData.get("email") ?? "").toLowerCase(),
       password: String(formData.get("password") ?? ""),
-      redirectTo: "/forest",
+      redirectTo,
     });
     return {};
   } catch (error) {

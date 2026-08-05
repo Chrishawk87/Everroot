@@ -138,6 +138,13 @@ export default async function UnlockPage({
             Questions? Reach us any time — we&rsquo;re here to help you preserve what matters.
           </p>
         )}
+
+        <p className="mt-4 border-t border-parchment/10 pt-4 text-sm text-parchment/60">
+          Want to give EverRoot to someone you love?{" "}
+          <Link href="/gift" className="text-canopy-light hover:underline">
+            Buy it as a gift
+          </Link>
+        </p>
       </div>
     </main>
   );

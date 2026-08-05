@@ -20,8 +20,13 @@ function SubmitButton() {
   );
 }
 
-export default function LoginPage() {
+export default function LoginPage({
+  searchParams,
+}: {
+  searchParams?: { next?: string };
+}) {
   const [state, formAction] = useFormState(login, initialState);
+  const next = typeof searchParams?.next === "string" ? searchParams.next : undefined;
 
   return (
     <main className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-5 py-[max(3rem,env(safe-area-inset-top))]">
@@ -49,6 +54,7 @@ export default function LoginPage() {
       <p className="mb-8 text-parchment/70">Return to your Living Legacy Forest.</p>
 
       <form action={formAction} className="flex flex-col gap-4 font-sans">
+        {next ? <input type="hidden" name="next" value={next} /> : null}
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-parchment/80">Email</span>
           <input

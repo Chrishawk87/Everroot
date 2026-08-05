@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe, grantLifetime } from "@/lib/billing";
+import { createGiftForSession } from "@/lib/gift";
 
 // Node runtime: Stripe signature verification needs the raw request body and
 // Node crypto. `dynamic` keeps this from being statically optimized.
@@ -36,12 +37,24 @@ export async function POST(req: Request) {
 
   if (event.type === "checkout.session.completed") {
     const s = event.data.object as Stripe.Checkout.Session;
-    const userId = s.metadata?.userId ?? s.client_reference_id ?? undefined;
-    if (userId && s.payment_status === "paid") {
-      await grantLifetime(userId, {
-        sessionId: s.id,
-        customerId: typeof s.customer === "string" ? s.customer : undefined,
-      });
+    if (s.payment_status === "paid") {
+      if (s.metadata?.kind === "gift") {
+        // A gift purchase — mint the redeemable code (idempotent) rather than
+        // unlocking an account. The buyer may have no account at all.
+        await createGiftForSession({
+          sessionId: s.id,
+          purchaserEmail: s.customer_details?.email ?? s.customer_email ?? null,
+        });
+      } else {
+        // A direct unlock — grant the buying account lifetime access.
+        const userId = s.metadata?.userId ?? s.client_reference_id ?? undefined;
+        if (userId) {
+          await grantLifetime(userId, {
+            sessionId: s.id,
+            customerId: typeof s.customer === "string" ? s.customer : undefined,
+          });
+        }
+      }
     }
   }
 

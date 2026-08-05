@@ -139,6 +139,28 @@ model Invite {
   @@map("invites")
 }
 
+// A purchased gift: one prepaid lifetime unlock that anyone holding the code can
+// redeem. Bought by a guest through Stripe (no account required), then redeemed
+// later by a signed-in recipient — which flips their account to lifetime access.
+// Deliberately unlinked to User (redeemedByUserId is a plain id, not a relation)
+// so buying a gift never requires the purchaser to have an account.
+model GiftCode {
+  id               String    @id @default(cuid())
+  // The human-shareable redemption code (e.g. "EVR-7GK2-QP9M").
+  code             String    @unique
+  // The Stripe Checkout Session that paid for this gift — the idempotency key,
+  // so replaying the webhook or reloading the success page never double-creates.
+  stripeSessionId  String    @unique
+  // Email Stripe collected from the buyer (for their receipt / support).
+  purchaserEmail   String?
+  // The account that redeemed this gift, and when (null until redeemed).
+  redeemedByUserId String?
+  redeemedAt       DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@map("gift_codes")
+}
+
 // A user's profile is the SEED metadata — who this tree belongs to.
 model Profile {
   id            String   @id @default(cuid())

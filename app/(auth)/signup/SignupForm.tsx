@@ -21,7 +21,13 @@ function SubmitButton() {
   );
 }
 
-export default function SignupForm({ invite }: { invite?: InvitePreview | null }) {
+export default function SignupForm({
+  invite,
+  gift,
+}: {
+  invite?: InvitePreview | null;
+  gift?: string;
+}) {
   const [state, formAction] = useFormState(signup, initialState);
 
   return (
@@ -48,7 +54,15 @@ export default function SignupForm({ invite }: { invite?: InvitePreview | null }
       <div className="relative z-10 w-full max-w-md rounded-3xl border border-parchment/15 bg-black/35 p-6 backdrop-blur-md sm:p-8">
       <h1 className="mb-2 font-serif text-3xl text-parchment">Plant your seed</h1>
 
-      {invite ? (
+      {gift ? (
+        <div className="mb-6 rounded-2xl border border-canopy-light/40 bg-canopy/20 px-5 py-4">
+          <p className="text-sm text-parchment/90">
+            You&rsquo;ve been given{" "}
+            <span className="font-semibold text-canopy-light">EverRoot for life</span>. Create
+            your account and your forest is yours forever — no trial, no subscription.
+          </p>
+        </div>
+      ) : invite ? (
         <div className="mb-6 rounded-2xl border border-canopy-light/40 bg-canopy/20 px-5 py-4">
           <p className="text-sm text-parchment/90">
             <span className="font-semibold text-canopy-light">{invite.inviterName}</span>{" "}
@@ -73,6 +87,7 @@ export default function SignupForm({ invite }: { invite?: InvitePreview | null }
 
       <form action={formAction} className="flex flex-col gap-4 font-sans">
         {invite ? <input type="hidden" name="inviteCode" value={invite.code} /> : null}
+        {gift ? <input type="hidden" name="giftCode" value={gift} /> : null}
         <Field
           label="Your name"
           name="displayName"
