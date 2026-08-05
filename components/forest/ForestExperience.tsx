@@ -93,10 +93,12 @@ export default function ForestExperience({
   graph,
   ownerId,
   guardianId = null,
+  access,
 }: {
   graph: ForestGraph;
   ownerId: string;
   guardianId?: string | null;
+  access?: { inTrial: boolean; trialDaysLeft: number; isPaid: boolean };
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<ForestNodeDTO | null>(null);
@@ -290,6 +292,27 @@ export default function ForestExperience({
       {/* Soft scrims keep top bar + bottom card legible over a bright canopy. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-40 bg-gradient-to-b from-black/65 to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-72 bg-gradient-to-t from-black/75 via-black/40 to-transparent" />
+
+      {/* Trial nudge — a gentle amber pill during the free trial that invites the
+          owner to unlock forever at any time. Hidden once they've paid (or for
+          grandfathered accounts, which are never in a trial). */}
+      {access?.inTrial ? (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center pt-safe">
+          <Link
+            href="/unlock"
+            className="pointer-events-auto mt-[4.25rem] flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-500/15 px-4 py-1.5 text-sm font-medium text-amber-100 shadow-lg backdrop-blur-md transition active:scale-95 hover:bg-amber-500/25"
+          >
+            <span aria-hidden>✦</span>
+            <span>
+              {access.trialDaysLeft <= 1
+                ? "Trial ends today"
+                : `${access.trialDaysLeft} days left in your trial`}
+              {" — "}
+              <span className="underline underline-offset-2">Unlock forever</span>
+            </span>
+          </Link>
+        </div>
+      ) : null}
 
       {/* ---------------- TOP BAR ---------------- */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-30 pt-safe">

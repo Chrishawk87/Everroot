@@ -25,5 +25,16 @@ export default async function ForestPage() {
 
   const guardianId = await getGuardianId(session.user.id);
 
-  return <ForestExperience graph={graph} ownerId={session.user.id} guardianId={guardianId} />;
+  return (
+    <ForestExperience
+      graph={graph}
+      ownerId={session.user.id}
+      guardianId={guardianId}
+      access={{
+        inTrial: access.inTrial,
+        trialDaysLeft: access.trialDaysLeft,
+        isPaid: access.isPaid,
+      }}
+    />
+  );
 }

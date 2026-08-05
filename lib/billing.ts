@@ -20,7 +20,7 @@ import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 
 /** Length of the free trial granted at signup, in days. */
-export const TRIAL_DAYS = 14;
+export const TRIAL_DAYS = 3;
 
 // --- Stripe client ---------------------------------------------------------
 
