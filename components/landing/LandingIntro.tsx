@@ -257,6 +257,20 @@ export default function LandingIntro({ mode = "landing", displayName, onComplete
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [arrived]);
 
+  // Landing mode only: once the opening has settled, remember that THIS browser
+  // has already seen the entry film. Otherwise, right after signup the forest's
+  // first-visit check replays the very same intro a second time. (Key must match
+  // INTRO_SEEN_KEY = "everroot_intro_seen" in ForestExperience.) The in-forest
+  // "Replay the opening" button is unaffected — it triggers directly.
+  useEffect(() => {
+    if (isReplay || !arrived) return;
+    try {
+      localStorage.setItem("everroot_intro_seen", "1");
+    } catch {
+      /* localStorage unavailable — forest may replay once; harmless. */
+    }
+  }, [isReplay, arrived]);
+
   // Safety: stop the pad if the component unmounts mid-descent.
   useEffect(() => {
     return () => stopPad();
