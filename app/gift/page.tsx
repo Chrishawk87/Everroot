@@ -71,9 +71,9 @@ export default function GiftPage({
           </p>
         ) : null}
 
-        {status === "unconfigured" ? (
+        {status === "unconfigured" || status === "error" ? (
           <p className="mb-4 rounded-lg bg-red-900/40 px-4 py-2 text-sm text-red-200">
-            Checkout isn&rsquo;t configured yet. Please try again shortly.
+            We couldn&rsquo;t start checkout just now. Please try again shortly.
           </p>
         ) : null}
 

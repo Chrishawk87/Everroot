@@ -21,22 +21,31 @@ export async function startGiftCheckout(): Promise<void> {
   const host = h.get("host");
   const base = `${proto}://${host}`;
 
-  const checkout = await stripe().checkout.sessions.create({
-    mode: "payment",
-    line_items: [{ price: stripePriceId(), quantity: 1 }],
-    // Stripe collects the buyer's email on the hosted page (for their receipt).
-    billing_address_collection: "auto",
-    allow_promotion_codes: true,
-    // `kind: gift` tells the webhook to mint a GiftCode instead of unlocking an
-    // account (there is no account to unlock — it's a present).
-    metadata: { kind: "gift" },
-    // Stripe swaps {CHECKOUT_SESSION_ID} for the real id so the success page can
-    // verify the payment server-side and show the code.
-    success_url: `${base}/gift/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/gift?status=cancel`,
-  });
+  // See app/actions/billing.ts for the same defensive pattern: a bad price/config
+  // makes Stripe throw, so we catch and send the buyer back to /gift with a
+  // notice instead of crashing. redirect() stays OUTSIDE the try.
+  let checkoutUrl: string | null = null;
+  try {
+    const checkout = await stripe().checkout.sessions.create({
+      mode: "payment",
+      line_items: [{ price: stripePriceId(), quantity: 1 }],
+      // Stripe collects the buyer's email on the hosted page (for their receipt).
+      billing_address_collection: "auto",
+      allow_promotion_codes: true,
+      // `kind: gift` tells the webhook to mint a GiftCode instead of unlocking an
+      // account (there is no account to unlock — it's a present).
+      metadata: { kind: "gift" },
+      // Stripe swaps {CHECKOUT_SESSION_ID} for the real id so the success page can
+      // verify the payment server-side and show the code.
+      success_url: `${base}/gift/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${base}/gift?status=cancel`,
+    });
+    checkoutUrl = checkout.url;
+  } catch (e) {
+    console.error("Stripe gift checkout creation failed:", e);
+  }
 
-  if (!checkout.url) throw new Error("Stripe did not return a checkout URL");
+  if (!checkoutUrl) redirect("/gift?status=error");
 
-  redirect(checkout.url);
+  redirect(checkoutUrl);
 }
