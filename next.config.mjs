@@ -7,22 +7,29 @@
 // SELF_HOSTED to true (and drop the files into /public) to remove this dependency.
 const BRAND_CDN = "https://d8j0ntlcm91z4.cloudfront.net";
 
+// Meta Pixel domains. fbevents.js is served from connect.facebook.net (a script),
+// and the pixel reports events/PageViews to www.facebook.com/tr (fetched as both
+// an image beacon and a connect/beacon request). All three CSP directives below
+// must name these hosts or the Pixel silently fails to fire.
+const META_PIXEL_SCRIPT = "https://connect.facebook.net";
+const META_PIXEL_REPORT = "https://www.facebook.com";
+
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-  `img-src 'self' data: blob: ${BRAND_CDN}`,
+  `img-src 'self' data: blob: ${BRAND_CDN} ${META_PIXEL_REPORT}`,
   `media-src 'self' blob: ${BRAND_CDN}`, // streamed recordings from /api + the opening video from the CDN
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${META_PIXEL_SCRIPT}`,
   // three.js/GLTFLoader decodes textures embedded in .glb models by turning them
   // into blob: URLs and fetching them via ImageBitmapLoader. fetch() is governed
   // by connect-src (NOT img-src), so blob: must be allowed here or EVERY model's
   // textures silently fail ("Couldn't load texture blob") — which made the hero
   // tree render as a blown-out white silhouette with no color.
-  "connect-src 'self' blob:",
+  `connect-src 'self' blob: ${META_PIXEL_SCRIPT} ${META_PIXEL_REPORT}`,
   "form-action 'self'",
 ].join("; ");
 
